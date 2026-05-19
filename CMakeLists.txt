@@ -14,19 +14,14 @@ add_library(${PROJECT_NAME} SHARED
     src/virtual_scanner.cpp res/twain_ds.rc)
 target_include_directories(${PROJECT_NAME} PRIVATE src pub/external/include)
 if(MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE /FIplatform.h)
+    target_compile_options(${PROJECT_NAME} PRIVATE /FIplatform.h /utf-8)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -include ${CMAKE_SOURCE_DIR}/src/platform.h)
 endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".ds")
 if(MSVC)
-    if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-        target_link_libraries(${PROJECT_NAME} PRIVATE
-            ${CMAKE_SOURCE_DIR}/pub/external/lib/${ARCH_DIR}/FreeImage.lib)
-    else()
-        target_link_libraries(${PROJECT_NAME} PRIVATE
-            ${CMAKE_SOURCE_DIR}/pub/external/bin/${ARCH_DIR}/FreeImage.lib)
-    endif()
+    target_link_libraries(${PROJECT_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/pub/external/bin/${ARCH_DIR}/FreeImage.lib)
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/EXPORT:DS_Entry")
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE
