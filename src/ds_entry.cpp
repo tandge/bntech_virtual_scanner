@@ -5,12 +5,13 @@
 #include "twain_data_source.h"
 #include <windows.h>
 #include <list>
+#include <memory>
 #include <cstring>
 
 // A single application connection: identity pair + Data Source instance.
 struct DsInst {
   TW_IDENTITY app_id;
-  TwainDataSource* ds;
+  std::unique_ptr<TwainDataSource> ds;
 };
 
 // Linked list of active DS instances (one per connected application).
@@ -29,7 +30,7 @@ extern "C" TW_UINT16 FAR PASCAL DS_Entry(
   if (pOrigin != nullptr) {
     for (auto& inst : g_ds_list) {
       if (inst.app_id.Id == pOrigin->Id) {
-        ds = inst.ds;
+        ds = inst.ds.get();
         break;
       }
     }
@@ -45,15 +46,15 @@ extern "C" TW_UINT16 FAR PASCAL DS_Entry(
     if (dg == DG_CONTROL && dat == DAT_IDENTITY && msg == MSG_CLOSEDS) {
       return TWRC_SUCCESS;
     }
-    ds = new TwainDataSource(*pOrigin);
-    if (ds == nullptr || TWRC_SUCCESS != ds->initialize()) {
-      delete ds;
+    auto new_ds = std::make_unique<TwainDataSource>(*pOrigin);
+    if (new_ds == nullptr || TWRC_SUCCESS != new_ds->initialize()) {
       return TWRC_FAILURE;
     }
     DsInst inst;
-    inst.ds = ds;
     inst.app_id = *pOrigin;
-    g_ds_list.push_back(inst);
+    inst.ds = std::move(new_ds);
+    g_ds_list.push_back(std::move(inst));
+    ds = g_ds_list.back().ds.get();
   }
   TW_INT16 result = ds->dsEntry(pOrigin, dg, dat, msg, pData);
   if (result == TWRC_SUCCESS &&
@@ -61,8 +62,7 @@ extern "C" TW_UINT16 FAR PASCAL DS_Entry(
       ds != nullptr) {
     for (auto it = g_ds_list.begin(); it != g_ds_list.end(); ++it) {
       if (it->app_id.Id == pOrigin->Id) {
-        delete it->ds;
-        g_ds_list.erase(it);
+        g_ds_list.erase(it);  // unique_ptr auto-deletes TwainDataSource.
         break;
       }
     }

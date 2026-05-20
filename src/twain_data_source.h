@@ -122,6 +122,13 @@ class TwainDataSource {
   // Wraps raw image data into a DIB header + palette + pixel data.
   TW_INT16 getDibImage(TW_HANDLE& h_image);
 
+  // Allocates DIB memory and fills BITMAPINFOHEADER + color palette.
+  TW_HANDLE allocAndFillDibHeader();
+
+  // Copies pixel rows from the internal image buffer into the DIB,
+  // performing R/B channel swap for 24-bit images.
+  bool copyDibPixelData(BYTE* dib_pixels);
+
   CapabilityManager caps_;
   VirtualScanner scanner_;
   DsState state_;

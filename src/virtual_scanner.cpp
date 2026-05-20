@@ -7,7 +7,6 @@
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
-#include <iostream>
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -16,8 +15,12 @@
 #pragma comment(lib, "shlwapi.lib")
 #ifdef DS_DEBUG_LOG
   #define DS_LOG(msg) OutputDebugStringA(msg)
+  #define DS_LOG_FMT(fmt, ...) do { char _buf[512]; \
+      _snprintf_s(_buf, sizeof(_buf), fmt, __VA_ARGS__); \
+      OutputDebugStringA(_buf); } while(0)
 #else
   #define DS_LOG(msg) ((void)0)
+  #define DS_LOG_FMT(fmt, ...) ((void)0)
 #endif
 HMODULE VirtualScanner::g_hinstance = nullptr;
 
@@ -81,8 +84,8 @@ void VirtualScanner::scanImageDirectory() {
       FindClose(find_handle);
     }
     std::sort(image_list_.begin(), image_list_.end());
-    std::cerr << "ds: Scanned image dir: " << image_dir_
-              << " found " << image_list_.size() << " image(s)" << std::endl;
+    DS_LOG_FMT("ds: Scanned image dir: %s found %zu image(s)\n",
+                image_dir_.c_str(), image_list_.size());
   }
   if (image_list_.empty()) {
     image_list_.push_back(default_image_path_);
@@ -117,7 +120,7 @@ bool VirtualScanner::acquireImage() {
   current_image_index_++;
   saveImageIndex();
   if (GetFileAttributesA(image_path.c_str()) == INVALID_FILE_ATTRIBUTES) {
-    std::cerr << "ds: Image file not found: " << image_path << std::endl;
+    DS_LOG_FMT("ds: Image file not found: %s\n", image_path.c_str());
     return false;
   }
   FREE_IMAGE_FORMAT fif = FreeImage_GetFileType(image_path.c_str());
@@ -125,7 +128,7 @@ bool VirtualScanner::acquireImage() {
     fif = FreeImage_GetFIFFromFilename(image_path.c_str());
   }
   if (fif == FIF_UNKNOWN) {
-    std::cerr << "ds: Unknown image format: " << image_path << std::endl;
+    DS_LOG_FMT("ds: Unknown image format: %s\n", image_path.c_str());
     return false;
   }
   int load_flags = 0;
@@ -136,7 +139,7 @@ bool VirtualScanner::acquireImage() {
   }
   dib_ = FreeImage_Load(fif, image_path.c_str(), load_flags);
   if (dib_ == nullptr) {
-    std::cerr << "ds: Failed to load image: " << image_path << std::endl;
+    DS_LOG_FMT("ds: Failed to load image: %s\n", image_path.c_str());
     return false;
   }
   if (!preScanPrep()) {
@@ -146,63 +149,67 @@ bool VirtualScanner::acquireImage() {
 }
 // Converts the loaded image to the requested pixel type and calculates
 // the DIB-compatible byte-per-row values for scan output.
-// RGB images have R/B channels swapped (FreeImage uses BGR internally).
-// BW and gray conversions use FreeImage's threshold/convert functions.
 bool VirtualScanner::preScanPrep() {
   if (dib_ == nullptr) return false;
-  if (FreeImage_GetBPP(dib_) != 24) {
-    FIBITMAP* converted = FreeImage_ConvertTo24Bits(dib_);
-    FreeImage_Unload(dib_);
-    dib_ = converted;
-    if (dib_ == nullptr) return false;
-  }
+  if (!ensure24BitDib()) return false;
+  if (!applyPixelFormat()) return false;
+  calculateRowParams();
+  return true;
+}
+
+// Converts non-24-bit images to 24-bit RGB for uniform processing.
+bool VirtualScanner::ensure24BitDib() {
+  if (FreeImage_GetBPP(dib_) == 24) return true;
+  FIBITMAP* converted = FreeImage_ConvertTo24Bits(dib_);
+  FreeImage_Unload(dib_);
+  dib_ = converted;
+  return dib_ != nullptr;
+}
+
+// Applies the requested pixel type: R/B channel swap for RGB,
+// BW threshold or grayscale conversion via FreeImage.
+// Also sets the DPI metadata based on current resolution settings.
+bool VirtualScanner::applyPixelFormat() {
+  // RGB mode: swap R/B channels (FreeImage stores BGR internally).
   if (settings_.pixel_type == TWPT_RGB) {
     int w = FreeImage_GetWidth(dib_);
     int h = FreeImage_GetHeight(dib_);
     for (int y = 0; y < h; ++y) {
       BYTE* line = FreeImage_GetScanLine(dib_, y);
       for (int x = 0; x < w; ++x) {
-        std::swap(line[x * 3 + 0], line[x * 3 + 2]);  
+        std::swap(line[x * 3 + 0], line[x * 3 + 2]);
       }
     }
   }
-  FreeImage_SetDotsPerMeterX(dib_, static_cast<unsigned>(settings_.x_resolution * 39.37 + 0.5));
-  FreeImage_SetDotsPerMeterY(dib_, static_cast<unsigned>(settings_.y_resolution * 39.37 + 0.5));
-  if (settings_.pixel_type != TWPT_RGB) {
-    FIBITMAP* converted = nullptr;
-    switch (settings_.pixel_type) {
-      case TWPT_BW:
-        converted = FreeImage_Threshold(dib_, 128);
-        break;
-      case TWPT_GRAY:
-        converted = FreeImage_ConvertTo8Bits(dib_);
-        break;
-    }
-    if (converted != nullptr) {
-      FreeImage_Unload(dib_);
-      dib_ = converted;
-    } else if (settings_.pixel_type != TWPT_RGB) {
-      return false;
-    }
+
+  // Set DPI metadata.
+  FreeImage_SetDotsPerMeterX(dib_,
+      static_cast<unsigned>(settings_.x_resolution * 39.37 + 0.5));
+  FreeImage_SetDotsPerMeterY(dib_,
+      static_cast<unsigned>(settings_.y_resolution * 39.37 + 0.5));
+
+  // Non-RGB modes: convert to BW or grayscale.
+  if (settings_.pixel_type == TWPT_RGB) return true;
+  FIBITMAP* converted = nullptr;
+  if (settings_.pixel_type == TWPT_BW) {
+    converted = FreeImage_Threshold(dib_, 128);
+  } else if (settings_.pixel_type == TWPT_GRAY) {
+    converted = FreeImage_ConvertTo8Bits(dib_);
   }
-  int width = FreeImage_GetWidth(dib_);
-  switch (settings_.pixel_type) {
-    case TWPT_BW:
-      dest_bytes_per_row_ = (((width * 1) + 31) / 32) * 4;
-      row_offset_ = 0;
-      break;
-    case TWPT_GRAY:
-      dest_bytes_per_row_ = (((width * 8) + 31) / 32) * 4;
-      row_offset_ = 0;
-      break;
-    case TWPT_RGB:
-    default:
-      dest_bytes_per_row_ = (((width * 24) + 31) / 32) * 4;
-      row_offset_ = 0;
-      break;
-  }
-  scan_line_ = 0;
+  if (converted == nullptr) return false;
+  FreeImage_Unload(dib_);
+  dib_ = converted;
   return true;
+}
+
+// Calculates DIB-compatible bytes-per-row (DWORD-aligned) and
+// resets the scan line counter for a new scan session.
+void VirtualScanner::calculateRowParams() {
+  int width = FreeImage_GetWidth(dib_);
+  row_offset_ = 0;
+  int bpp = FreeImage_GetBPP(dib_);
+  dest_bytes_per_row_ = (((width * bpp) + 31) / 32) * 4;
+  scan_line_ = 0;
 }
 // Outputs the next batch of scan lines in bottom-up DIB order.
 // Each line is padded to a 4-byte boundary.  The function outputs as many
@@ -265,8 +272,8 @@ void VirtualScanner::loadImageIndex() {
           i++;
         }
         current_image_index_ = val;
-        std::cerr << "ds: Loaded next_index=" << current_image_index_
-                  << " from " << info_path << std::endl;
+        DS_LOG_FMT("ds: Loaded next_index=%zu from %s\n",
+                  current_image_index_, info_path.c_str());
       }
       break;
     }
@@ -277,12 +284,12 @@ void VirtualScanner::saveImageIndex() const {
   std::string info_path = image_dir_ + "\\info.json";
   std::ofstream file(info_path);
   if (!file.is_open()) {
-    std::cerr << "ds: Failed to write " << info_path << std::endl;
+    DS_LOG_FMT("ds: Failed to write %s\n", info_path.c_str());
     return;
   }
   file << "{\n  \"next_index\": " << current_image_index_ << "\n}\n";
-  std::cerr << "ds: Saved next_index=" << current_image_index_
-            << " to " << info_path << std::endl;
+  DS_LOG_FMT("ds: Saved next_index=%zu to %s\n",
+            current_image_index_, info_path.c_str());
 }
 // Resets the image index to 0 when it has passed the end of the list.
 // Re-scans the directory to pick up any newly added images before wrapping.

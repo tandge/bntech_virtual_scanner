@@ -1,3 +1,21 @@
+# Build outputs
 build/
 *.obj
 *.o
+*.ds
+*.exp
+*.lib
+*.dll
+*.exe
+
+# IDE files
+.idea/
+.vscode/
+*.vcxproj*
+*.sln
+
+# Temporary files
+*.py
+*.tmp
+*.swp
+*~

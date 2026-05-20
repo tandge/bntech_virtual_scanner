@@ -47,6 +47,26 @@ public:
   void lock();
   void unlock();
 
+  // RAII lock guard: calls unlock() on destruction.
+  // Use ScopedLocker locker(scanner.lock()) or simply scanner.lock();
+  // the guard is movable but non-copyable.
+  struct ScopedLocker {
+    explicit ScopedLocker(VirtualScanner* s) : scanner(s) {}
+    ScopedLocker(const ScopedLocker&) = delete;
+    ScopedLocker& operator=(const ScopedLocker&) = delete;
+    ScopedLocker(ScopedLocker&& other) noexcept
+        : scanner(other.scanner) { other.scanner = nullptr; }
+    ScopedLocker& operator=(ScopedLocker&& other) noexcept {
+      if (this != &other) { scanner = other.scanner; other.scanner = nullptr; }
+      return *this;
+    }
+    ~ScopedLocker() { if (scanner) scanner->unlock(); }
+    VirtualScanner* scanner;
+  };
+
+  // Acquires a scoped lock; returned guard auto-unlocks when destroyed.
+  ScopedLocker scopedLock() { lock(); return ScopedLocker(this); }
+
   // Dimensions of the currently loaded image in pixels.
   int getImageWidth() const;
   int getImageHeight() const;
@@ -75,6 +95,15 @@ private:
   // Prepares the loaded image for scanning: converts pixel type,
   // swaps color channels, and calculates row sizes.
   bool preScanPrep();
+
+  // Ensures the loaded DIB is in 24-bit RGB format (required for uniform processing).
+  bool ensure24BitDib();
+
+  // Applies pixel type conversion (BW threshold or gray) and swaps R/B channels for RGB.
+  bool applyPixelFormat();
+
+  // Calculates DIB-compatible bytes-per-row and resets the scan line counter.
+  void calculateRowParams();
 
   // Loads/saves the current image index to info.json for persistence.
   void loadImageIndex();

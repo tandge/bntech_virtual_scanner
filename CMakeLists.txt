@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
 project(bntech_virtual_scanner LANGUAGES CXX RC)
 set(CMAKE_CXX_STANDARD 17)
+
+# Default build type if not specified.
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(ARCH_DIR win64)
     set(TWAIN_DIR twain_64/bntech)
@@ -15,8 +21,16 @@ add_library(${PROJECT_NAME} SHARED
 target_include_directories(${PROJECT_NAME} PRIVATE src pub/external/include)
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /FIplatform.h /utf-8)
+    # Debug configuration: enable debug logging and extra warnings.
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Debug>:DS_DEBUG_LOG>)
+    target_compile_options(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Debug>:/W4>
+        $<$<CONFIG:Release>:/W3>)
 else()
     target_compile_options(${PROJECT_NAME} PRIVATE -include ${CMAKE_SOURCE_DIR}/src/platform.h)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        $<$<CONFIG:Debug>:DS_DEBUG_LOG>)
 endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".ds")
 if(MSVC)

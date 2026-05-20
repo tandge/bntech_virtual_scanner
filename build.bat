@@ -6,22 +6,54 @@ set "VCVARS=%VSBASE%\VC\Auxiliary\Build\vcvarsall.bat"
 set "VS_CMAKE=%VSBASE%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
 set "NINJA=%VSBASE%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe"
 
-if /i "%~1"=="install" (
-    if "%~2"=="" ("%VS_CMAKE%" --install build/win32 --prefix C:/Windows & "%VS_CMAKE%" --install build/win64 --prefix C:/Windows)
-    if /i "%~2"=="win32" "%VS_CMAKE%" --install build/win32 --prefix C:/Windows
-    if /i "%~2"=="win64" "%VS_CMAKE%" --install build/win64 --prefix C:/Windows
+:: Default build type.
+set "BUILD_TYPE=Release"
+
+:: Parse options.
+:parse_args
+if "%~1"=="" goto :dispatch
+if /i "%~1"=="clean"     (set "CLEAN=1" & shift & goto :parse_args)
+if /i "%~1"=="debug"     (set "BUILD_TYPE=Debug" & shift & goto :parse_args)
+if /i "%~1"=="release"   (set "BUILD_TYPE=Release" & shift & goto :parse_args)
+if /i "%~1"=="relwithdebinfo" (set "BUILD_TYPE=RelWithDebInfo" & shift & goto :parse_args)
+if /i "%~1"=="install"   (set "INSTALL=1" & shift & goto :parse_args)
+if /i "%~1"=="win32"    (set "TARGET=win32" & shift & goto :parse_args)
+if /i "%~1"=="win64"    (set "TARGET=win64" & shift & goto :parse_args)
+shift & goto :parse_args
+
+:dispatch
+:: Clean mode: remove build directories.
+if defined CLEAN (
+    if exist build\win32 rmdir /s /q build\win32
+    if exist build\win64 rmdir /s /q build\win64
+    echo Build directories cleaned.
     goto :eof)
 
-if "%~1"=="" (call :b x86 & call :b x64 & goto :eof)
-if /i "%~1"=="win32" (call :b x86 & goto :eof)
-if /i "%~1"=="win64" (call :b x64 & goto :eof)
-echo Usage: build.bat [win32^|win64^|install [win32^|win64]]
+:: Install mode.
+if defined INSTALL (
+    if "%TARGET%"=="win32" ("%VS_CMAKE%" --install build/win32 --prefix C:/Windows & goto :eof)
+    if "%TARGET%"=="win64" ("%VS_CMAKE%" --install build/win64 --prefix C:/Windows & goto :eof)
+    "%VS_CMAKE%" --install build/win32 --prefix C:/Windows
+    "%VS_CMAKE%" --install build/win64 --prefix C:/Windows
+    goto :eof)
+
+:: Build mode.
+if "%TARGET%"=="win32" (call :b x86 "%BUILD_TYPE%" & goto :eof)
+if "%TARGET%"=="win64" (call :b x64 "%BUILD_TYPE%" & goto :eof)
+:: Default: build both.
+call :b x86 "%BUILD_TYPE%"
+call :b x64 "%BUILD_TYPE%"
 goto :eof
 
 :b
 call "%VCVARS%" %~1 >nul 2>&1
+set "OUTDIR=%~1"
 if "%~1"=="x86" (set "OUTDIR=win32")
 if "%~1"=="x64" (set "OUTDIR=win64")
-"%VS_CMAKE%" -S . -B build/!OUTDIR! -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA%" -DCMAKE_BUILD_TYPE=Release
+echo Building %OUTDIR% (%BUILD_TYPE%)...
+"%VS_CMAKE%" -S . -B build/!OUTDIR! -G Ninja ^
+    -DCMAKE_MAKE_PROGRAM="%NINJA%" ^
+    -DCMAKE_BUILD_TYPE=%BUILD_TYPE%
+if errorlevel 1 exit /b 1
 "%VS_CMAKE%" --build build/!OUTDIR!
 exit /b

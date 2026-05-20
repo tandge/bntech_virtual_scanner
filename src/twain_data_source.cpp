@@ -663,34 +663,55 @@ bool TwainDataSource::updateScannerFromCaps() {
 }
 // Wraps the raw image data into a complete DIB (Device Independent Bitmap)
 // with BITMAPINFOHEADER, optional color palette, and pixel data.
-// BW (1 bpp) gets a 2-entry B/W palette; gray (8 bpp) gets 256 gray entries.
-// RGB (24 bpp) uses no palette.  Pixel rows are stored bottom-up.
-// R/B channels are swapped in RGB mode (FreeImage stores BGR internally).
+// Delegates header/palette construction to allocAndFillDibHeader() and
+// pixel copying (with R/B swap for 24-bit) to copyDibPixelData().
 TW_INT16 TwainDataSource::getDibImage(TW_HANDLE& h) {
   if (image_data_ == nullptr) {
     condition_code_ = TWCC_BADVALUE;
     return TWRC_FAILURE;
   }
   h = nullptr;
+  TW_HANDLE hd = allocAndFillDibHeader();
+  if (hd == nullptr) {
+    condition_code_ = TWCC_LOWMEMORY;
+    return TWRC_FAILURE;
+  }
+  BYTE* db = static_cast<BYTE*>(dsmLockMemory(hd));
+  if (db == nullptr) {
+    dsmFree(hd);
+    condition_code_ = TWCC_LOWMEMORY;
+    return TWRC_FAILURE;
+  }
+  // Skip past BITMAPINFOHEADER and palette to pixel data area.
+  WORD bpp = image_info_.BitsPerPixel;
+  WORD nc = (bpp == 1 ? 2 : bpp == 8 ? 256 : 0);
+  BYTE* dst = db + sizeof(BITMAPINFOHEADER) + sizeof(RGBQUAD) * nc;
+  if (!copyDibPixelData(dst)) {
+    dsmUnlockMemory(hd);
+    dsmFree(hd);
+    condition_code_ = TWCC_LOWMEMORY;
+    return TWRC_FAILURE;
+  }
+  dsmUnlockMemory(hd);
+  h = hd;
+  return TWRC_SUCCESS;
+}
+
+// Allocates a DIB buffer and fills BITMAPINFOHEADER + color palette.
+// Returns the handle to the locked-then-unlocked buffer (caller locks again).
+TW_HANDLE TwainDataSource::allocAndFillDibHeader() {
   WORD bpp = image_info_.BitsPerPixel;
   DWORD w = image_info_.ImageWidth;
   DWORD hgt = image_info_.ImageLength;
-  DWORD sbpr = BYTES_PERLINE(w, bpp);
   DWORD dbpr = BYTES_PERLINE(w, bpp);
   WORD nc = (bpp == 1 ? 2 : bpp == 8 ? 256 : 0);
   DWORD ps = sizeof(RGBQUAD) * nc;
   DWORD dsz = sizeof(BITMAPINFOHEADER) + ps + dbpr * hgt;
   TW_HANDLE hd = dsmAlloc(dsz);
-  if (hd == nullptr) {
-    condition_code_ = TWCC_LOWMEMORY;
-    return TWRC_FAILURE;
-  }
+  if (hd == nullptr) return nullptr;
   auto* bi = static_cast<PBITMAPINFOHEADER>(dsmLockMemory(hd));
-  if (bi == nullptr) {
-    dsmFree(hd);
-    condition_code_ = TWCC_LOWMEMORY;
-    return TWRC_FAILURE;
-  }
+  if (bi == nullptr) { dsmFree(hd); return nullptr; }
+  // Fill BITMAPINFOHEADER fields.
   bi->biSize = sizeof(BITMAPINFOHEADER);
   bi->biWidth = static_cast<LONG>(w);
   bi->biHeight = static_cast<LONG>(hgt);
@@ -705,53 +726,54 @@ TW_INT16 TwainDataSource::getDibImage(TW_HANDLE& h) {
   bi->biClrUsed = nc;
   bi->biClrImportant = nc;
   dsmUnlockMemory(hd);
+  // Fill palette after header.
   BYTE* db = static_cast<BYTE*>(dsmLockMemory(hd));
-  if (db == nullptr) {
-    dsmFree(hd);
-    condition_code_ = TWCC_LOWMEMORY;
-    return TWRC_FAILURE;
-  }
-  BYTE* dst = db + sizeof(BITMAPINFOHEADER);
+  if (db == nullptr) { dsmFree(hd); return nullptr; }
+  BYTE* pal_dst = db + sizeof(BITMAPINFOHEADER);
   if (nc == 2) {
-    auto* pal = reinterpret_cast<RGBQUAD*>(dst);
+    auto* pal = reinterpret_cast<RGBQUAD*>(pal_dst);
     pal[0] = {0, 0, 0, 0};
     pal[1] = {0xFF, 0xFF, 0xFF, 0};
-    dst += ps;
   } else if (nc == 256) {
-    auto* pal = reinterpret_cast<RGBQUAD*>(dst);
+    auto* pal = reinterpret_cast<RGBQUAD*>(pal_dst);
     for (int i = 0; i < 256; ++i) {
       pal[i] = {static_cast<BYTE>(i), static_cast<BYTE>(i),
                 static_cast<BYTE>(i), 0};
     }
-    dst += ps;
-  } else {
-    dst += ps;
   }
+  dsmUnlockMemory(hd);
+  return hd;
+}
+
+// Copies pixel rows from the locked internal buffer into the DIB pixel area.
+// Rows are stored bottom-up (DIB convention). Swaps R/B for 24-bit RGB images
+// (source is BGR from FreeImage, DIB expects RGB).
+bool TwainDataSource::copyDibPixelData(BYTE* dst) {
+  DWORD w = image_info_.ImageWidth;
+  DWORD hgt = image_info_.ImageLength;
+  WORD bpp = image_info_.BitsPerPixel;
+  DWORD sbpr = BYTES_PERLINE(w, bpp);
+  DWORD dbpr = BYTES_PERLINE(w, bpp);
   BYTE* src = static_cast<BYTE*>(dsmLockMemory(image_data_));
-  if (src == nullptr) {
-    dsmUnlockMemory(hd);
-    dsmFree(hd);
-    condition_code_ = TWCC_LOWMEMORY;
-    return TWRC_FAILURE;
-  }
+  if (src == nullptr) return false;
   for (DWORD r = 0; r < hgt; ++r) {
     BYTE* sr = src + sbpr * (hgt - r - 1);
     if (bpp == 24) {
+      // R/B channel swap: FreeImage BGR → DIB RGB.
       for (DWORD c = 0; c < w; ++c) {
-        dst[c * 3] = sr[c * 3 + 2];
+        dst[c * 3]     = sr[c * 3 + 2];
         dst[c * 3 + 1] = sr[c * 3 + 1];
         dst[c * 3 + 2] = sr[c * 3];
       }
     } else {
       std::memcpy(dst, sr, sbpr);
     }
+    // Pad to DWORD alignment.
     if (dbpr > sbpr) {
       std::memset(dst + sbpr, 0, dbpr - sbpr);
     }
     dst += dbpr;
   }
   dsmUnlockMemory(image_data_);
-  dsmUnlockMemory(hd);
-  h = hd;
-  return TWRC_SUCCESS;
+  return true;
 }
