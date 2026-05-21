@@ -18,7 +18,7 @@ add_library(${PROJECT_NAME} SHARED
     src/capability.cpp src/ds_entry.cpp
     src/twain_data_source.cpp src/unit_convert.cpp
     src/virtual_scanner.cpp res/twain_ds.rc)
-target_include_directories(${PROJECT_NAME} PRIVATE src pub/external/include)
+target_include_directories(${PROJECT_NAME} PRIVATE src pub/external/include pub/external/FreeImage/${ARCH_DIR})
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /FIplatform.h /utf-8)
     # Debug configuration: enable debug logging and extra warnings.
@@ -35,19 +35,19 @@ endif()
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".ds")
 if(MSVC)
     target_link_libraries(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/pub/external/bin/${ARCH_DIR}/FreeImage.lib)
+        ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.lib)
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "/EXPORT:DS_Entry")
 else()
     target_link_libraries(${PROJECT_NAME} PRIVATE
-        ${CMAKE_SOURCE_DIR}/pub/external/bin/${ARCH_DIR}/FreeImage.a)
+        ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.a)
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-Wl,--kill-at")
 endif()
 target_link_libraries(${PROJECT_NAME} PRIVATE shlwapi)
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/pub/external/bin/${ARCH_DIR}/FreeImage.dll $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.dll $<TARGET_FILE_DIR:${PROJECT_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/res/TWAIN_logo.png $<TARGET_FILE_DIR:${PROJECT_NAME}>)
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${TWAIN_DIR})
-install(FILES ${CMAKE_SOURCE_DIR}/pub/external/bin/${ARCH_DIR}/FreeImage.dll
+install(FILES ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.dll
     ${CMAKE_SOURCE_DIR}/res/TWAIN_logo.png DESTINATION ${TWAIN_DIR})
