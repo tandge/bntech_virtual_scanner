@@ -16,8 +16,9 @@ else()
 endif()
 add_library(${PROJECT_NAME} SHARED
     src/capability.cpp src/ds_entry.cpp
-    src/twain_data_source.cpp src/unit_convert.cpp
-    src/virtual_scanner.cpp res/twain_ds.rc)
+    src/settings_server.cpp src/twain_data_source.cpp
+    src/unit_convert.cpp src/virtual_scanner.cpp
+    res/twain_ds.rc)
 target_include_directories(${PROJECT_NAME} PRIVATE src pub/external/include pub/external/FreeImage/${ARCH_DIR})
 if(MSVC)
     target_compile_options(${PROJECT_NAME} PRIVATE /FIplatform.h /utf-8)
@@ -42,7 +43,7 @@ else()
         ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.a)
     set_target_properties(${PROJECT_NAME} PROPERTIES LINK_FLAGS "-Wl,--kill-at")
 endif()
-target_link_libraries(${PROJECT_NAME} PRIVATE shlwapi)
+target_link_libraries(${PROJECT_NAME} PRIVATE shlwapi ws2_32)
 add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.dll $<TARGET_FILE_DIR:${PROJECT_NAME}>

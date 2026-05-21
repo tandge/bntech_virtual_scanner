@@ -4,6 +4,7 @@
 
 #include "twain_data_source.h"
 #include "unit_convert.h"
+#include "settings_server.h"
 #include <windows.h>
 #include <cstring>
 #include <algorithm>
@@ -440,6 +441,19 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
   xfer_pending_ = false;
   scanner_.wrapImageIndex();
   scanner_.lock();
+  if (data->ShowUI) {
+    SettingsServer server;
+    SettingsUiResult ui_result;
+    if (!server.showSettingsUi("", ui_result) || !ui_result.scan_clicked) {
+      scanner_.unlock();
+      state_ = DsState::kOpen;
+      condition_code_ = TWCC_SUCCESS;
+      return TWRC_CANCEL;
+    }
+    caps_.setCurrentValue(ICAP_PIXELTYPE, ui_result.pixel_type);
+    caps_.setCurrentValue(ICAP_XRESOLUTION, ui_result.resolution);
+    caps_.setCurrentValue(ICAP_YRESOLUTION, ui_result.resolution);
+  }
   if (!updateScannerFromCaps()) {
     goto fail;
   }
