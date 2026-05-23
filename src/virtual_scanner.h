@@ -16,6 +16,8 @@ struct ScannerSettings {
   int pixel_type;      // TWPT_BW, TWPT_GRAY, or TWPT_RGB.
   float x_resolution;  // Horizontal DPI.
   float y_resolution;  // Vertical DPI.
+  int page_size;       // 0=US Letter, 1=US Legal, 2=A4, 3=A5.
+  int page_fill_mode;  // 0=Stretch, 1=Fit with padding, 2=Fill and crop.
 };
 
 class VirtualScanner {
@@ -115,10 +117,9 @@ private:
   // Ensures the loaded DIB is in 24-bit RGB format (required for uniform processing).
   bool ensure24BitDib();
 
-  // Scales the image so that the output pixel dimensions match the requested
-  // DPI.  Source DPI is read from the image metadata (defaults to 300 if
-  // missing).  scale = target / source; FreeImage_Rescale is used.
-  bool applyResolutionScaling();
+  // Resizes the image to the selected physical page size at the requested DPI,
+  // using the selected fill mode (stretch, fit with padding, or fill and crop).
+  bool applyPageSizeScaling();
 
   // Applies pixel type conversion (BW threshold or gray).  Also sets DPI
   // metadata to match the requested resolution so the output files / DIB

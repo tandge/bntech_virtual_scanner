@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cstring>
 #include <ctime>
+#include <cmath>
 #include <fstream>
 #include <vector>
 #pragma comment(lib, "shlwapi.lib")
@@ -391,6 +392,8 @@ bool VirtualScanner::resetScanner() {
   settings_.pixel_type = TWPT_RGB;
   settings_.x_resolution = 300.0f;
   settings_.y_resolution = 300.0f;
+  settings_.page_size = 0;
+  settings_.page_fill_mode = 0;
   if (dib_ != nullptr) {
     FreeImage_Unload(dib_);
     dib_ = nullptr;
@@ -444,7 +447,7 @@ bool VirtualScanner::acquireImage() {
 bool VirtualScanner::preScanPrep() {
   if (dib_ == nullptr) return false;
   if (!ensure24BitDib()) return false;
-  if (!applyResolutionScaling()) return false;
+  if (!applyPageSizeScaling()) return false;
   if (!applyPixelFormat()) return false;
   calculateRowParams();
   return true;
@@ -459,40 +462,91 @@ bool VirtualScanner::ensure24BitDib() {
   return dib_ != nullptr;
 }
 
-// Scales the image to match the requested DPI.  Reads the source DPI from
-// image metadata (uses 300 as a sensible default when no metadata is present
-// or when the embedded value is screen-resolution like 72).  Computes the
-// output pixel dimensions as:
-//     new_w = round(src_w * target_dpi / src_dpi)
-//     new_h = round(src_h * target_dpi / src_dpi)
-// Skips rescaling when the scale factor is within 1 % of 1.0.
-bool VirtualScanner::applyResolutionScaling() {
+bool VirtualScanner::applyPageSizeScaling() {
   if (dib_ == nullptr) return false;
-  // Determine source DPI.  FreeImage returns 0 or a very low screen value
-  // (72 / ~2835 dpM) for images without embedded DPI; default to 300.
-  float src_dpm_x = static_cast<float>(FreeImage_GetDotsPerMeterX(dib_));
-  float src_dpi_x = (src_dpm_x > 100.0f) ? src_dpm_x / 39.37f : 300.0f;
-  // Use the x-resolution target; round to a reasonable precision.
-  float tgt_dpi = settings_.x_resolution;
-  if (tgt_dpi <= 0.0f) tgt_dpi = 300.0f;
-  float scale = tgt_dpi / src_dpi_x;
-  // If we are within 1 % of 1:1, nothing to do.
-  if (scale >= 0.99f && scale <= 1.01f) return true;
+  static const float kPageSizes[][2] = {
+      {8.5f, 11.0f},       // US Letter.
+      {8.5f, 14.0f},       // US Legal.
+      {8.2677f, 11.6929f}, // A4.
+      {5.8268f, 8.2677f}   // A5.
+  };
+  int page = settings_.page_size;
+  if (page < 0 || page > 3) page = 0;
+  float x_dpi = settings_.x_resolution;
+  float y_dpi = settings_.y_resolution;
+  if (x_dpi <= 0.0f) x_dpi = 300.0f;
+  if (y_dpi <= 0.0f) y_dpi = x_dpi;
+  int target_w = static_cast<int>(kPageSizes[page][0] * x_dpi + 0.5f);
+  int target_h = static_cast<int>(kPageSizes[page][1] * y_dpi + 0.5f);
+  if (target_w < 1) target_w = 1;
+  if (target_h < 1) target_h = 1;
+
+  int fill_mode = settings_.page_fill_mode;
+  if (fill_mode < 0 || fill_mode > 2) fill_mode = 0;
+
   int src_w = FreeImage_GetWidth(dib_);
   int src_h = FreeImage_GetHeight(dib_);
-  int new_w = static_cast<int>(static_cast<float>(src_w) * scale + 0.5f);
-  int new_h = static_cast<int>(static_cast<float>(src_h) * scale + 0.5f);
-  if (new_w < 1) new_w = 1;
-  if (new_h < 1) new_h = 1;
-  FIBITMAP* scaled = FreeImage_Rescale(dib_, new_w, new_h, FILTER_BILINEAR);
+  if (src_w <= 0 || src_h <= 0) return false;
+
+  if (fill_mode == 0) {
+    // Stretch: force the image to exactly match the page dimensions.
+    if (src_w == target_w && src_h == target_h) return true;
+    FIBITMAP* scaled = FreeImage_Rescale(dib_, target_w, target_h, FILTER_BILINEAR);
+    if (scaled == nullptr) return false;
+    FreeImage_Unload(dib_);
+    dib_ = scaled;
+    return true;
+  }
+
+  float scale_x = static_cast<float>(target_w) / static_cast<float>(src_w);
+  float scale_y = static_cast<float>(target_h) / static_cast<float>(src_h);
+  float scale = (fill_mode == 1) ? std::min(scale_x, scale_y)
+                                 : std::max(scale_x, scale_y);
+  int scaled_w = (fill_mode == 1)
+      ? static_cast<int>(std::floor(src_w * scale + 0.5f))
+      : static_cast<int>(std::ceil(src_w * scale));
+  int scaled_h = (fill_mode == 1)
+      ? static_cast<int>(std::floor(src_h * scale + 0.5f))
+      : static_cast<int>(std::ceil(src_h * scale));
+  if (scaled_w < 1) scaled_w = 1;
+  if (scaled_h < 1) scaled_h = 1;
+  if (fill_mode == 1) {
+    if (scaled_w > target_w) scaled_w = target_w;
+    if (scaled_h > target_h) scaled_h = target_h;
+  } else {
+    if (scaled_w < target_w) scaled_w = target_w;
+    if (scaled_h < target_h) scaled_h = target_h;
+  }
+
+  FIBITMAP* scaled = FreeImage_Rescale(dib_, scaled_w, scaled_h, FILTER_BILINEAR);
   if (scaled == nullptr) return false;
+
+  if (fill_mode == 1) {
+    // Fit with padding: preserve aspect ratio, center on a white page canvas.
+    FIBITMAP* canvas = FreeImage_Allocate(target_w, target_h, FreeImage_GetBPP(scaled));
+    if (canvas == nullptr) {
+      FreeImage_Unload(scaled);
+      return false;
+    }
+    RGBQUAD white = {255, 255, 255, 0};
+    FreeImage_FillBackground(canvas, &white);
+    int left = (target_w - scaled_w) / 2;
+    int top = (target_h - scaled_h) / 2;
+    FreeImage_Paste(canvas, scaled, left, top, 256);
+    FreeImage_Unload(scaled);
+    FreeImage_Unload(dib_);
+    dib_ = canvas;
+    return true;
+  }
+
+  // Fill and crop: preserve aspect ratio, then crop the centered page area.
+  int left = (scaled_w - target_w) / 2;
+  int top = (scaled_h - target_h) / 2;
+  FIBITMAP* cropped = FreeImage_Copy(scaled, left, top, left + target_w, top + target_h);
+  FreeImage_Unload(scaled);
+  if (cropped == nullptr) return false;
   FreeImage_Unload(dib_);
-  dib_ = scaled;
-  // Transfer the desired DPI to the rescaled image.
-  FreeImage_SetDotsPerMeterX(dib_,
-      static_cast<unsigned>(tgt_dpi * 39.37f + 0.5f));
-  FreeImage_SetDotsPerMeterY(dib_,
-      static_cast<unsigned>(settings_.y_resolution * 39.37f + 0.5f));
+  dib_ = cropped;
   return true;
 }
 

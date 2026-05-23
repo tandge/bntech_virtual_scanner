@@ -79,6 +79,19 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<option value='300'" << sel(300, result_.resolution) << ">300</option>\n";
   html << "<option value='600'" << sel(600, result_.resolution) << ">600</option>\n";
   html << "</select><br>\n";
+  html << "<label>Page Size:</label>\n";
+  html << "<select id='pagesize' name='pagesize'>\n";
+  html << "<option value='0'" << sel(0, result_.page_size) << ">US Letter (8.5 x 11 in)</option>\n";
+  html << "<option value='1'" << sel(1, result_.page_size) << ">US Legal (8.5 x 14 in)</option>\n";
+  html << "<option value='2'" << sel(2, result_.page_size) << ">A4 (210 x 297 mm)</option>\n";
+  html << "<option value='3'" << sel(3, result_.page_size) << ">A5 (148 x 210 mm)</option>\n";
+  html << "</select><br>\n";
+  html << "<label>Page Fill:</label>\n";
+  html << "<select id='pagefillmode' name='pagefillmode'>\n";
+  html << "<option value='0'" << sel(0, result_.page_fill_mode) << ">Stretch</option>\n";
+  html << "<option value='1'" << sel(1, result_.page_fill_mode) << ">Fit with padding</option>\n";
+  html << "<option value='2'" << sel(2, result_.page_fill_mode) << ">Fill and crop</option>\n";
+  html << "</select><br>\n";
   html << "</div>\n";
   if (result_.app_managed_file_output) {
     // Application has already chosen File-transfer mode and will supply the
@@ -139,6 +152,8 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "  var p={};\n";
   html << "  p.pixeltype=val('pixeltype','');\n";
   html << "  p.resolution=val('resolution','');\n";
+  html << "  p.pagesize=val('pagesize','');\n";
+  html << "  p.pagefillmode=val('pagefillmode','');\n";
   html << "  p.fileformat=val('fileformat','');\n";
   html << "  p.transfermode=val('transfermode','');\n";
   html << "  p.outputdir=val('outputdir','');\n";
@@ -190,6 +205,8 @@ void SettingsServer::parseFormData(const std::string& form_data) {
   result_.scan_clicked = (params["action"] == "scan");
   result_.pixel_type = std::atoi(params["pixeltype"].c_str());
   result_.resolution = std::atoi(params["resolution"].c_str());
+  result_.page_size = std::atoi(params["pagesize"].c_str());
+  result_.page_fill_mode = std::atoi(params["pagefillmode"].c_str());
   result_.file_format = std::atoi(params["fileformat"].c_str());
   result_.transfer_mode = std::atoi(params["transfermode"].c_str());
   std::strncpy(result_.output_dir, params["outputdir"].c_str(), MAX_PATH - 1);
