@@ -70,6 +70,12 @@ class TwainDataSource {
   // DAT_IMAGENATIVEXFER: Performs the actual image transfer as DIB.
   TW_INT16 handleDatImageNativeXfer(TW_UINT16 msg, TW_HANDLE& data);
 
+  // DAT_IMAGEFILEXFER: Returns the saved file path for file-based transfer.
+  TW_INT16 handleDatImageFileXfer(TW_UINT16 msg, pTW_SETUPFILEXFER data);
+
+  // DAT_SETUPFILEXFER: Accepts / returns the file-save path from the app.
+  TW_INT16 handleDatSetupFileXfer(TW_UINT16 msg, pTW_SETUPFILEXFER data);
+
   // --- State Machine ---
 
   // Opens a TWAIN connection from an application.
@@ -140,6 +146,10 @@ class TwainDataSource {
   TW_HANDLE image_data_;
   bool canceled_;
   bool xfer_pending_;
+  // Path supplied by the application via DAT_SETUPFILEXFER / MSG_SET.
+  // Used to pre-fill the settings UI and to pick the actual save location
+  // when ShowUI=FALSE.  Empty until the application provides one.
+  std::string app_file_path_;
 };
 
 #endif

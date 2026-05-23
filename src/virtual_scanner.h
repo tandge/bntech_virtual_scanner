@@ -34,6 +34,22 @@ public:
   // bytes_received is set to the number of bytes actually read.
   bool getScanStrip(BYTE* buffer, DWORD bytes_to_read, DWORD& bytes_received);
 
+  // Sets the output directory and format for file transfer mode.
+  void setOutputDir(const std::string& dir) { output_dir_ = dir; }
+  void setOutputFormat(int fmt) { output_format_ = fmt; }
+  // Sets the base output filename (without extension).  When empty, a
+  // timestamped name is generated automatically by saveImageToFile().
+  void setOutputFilename(const std::string& name) { output_filename_ = name; }
+  // Saves the current image to output_dir_ with the configured format.
+  bool saveImageToFile();
+  // Saves the current image to the given absolute or relative path.
+  // The file format is derived from the path's extension (defaults to PNG
+  // if the extension is unrecognized or missing).  Relative paths are
+  // resolved against the process working directory.
+  bool saveImageToPath(const std::string& path);
+  // Returns the path of the last saved file.
+  std::string getLastSavedFilePath() const { return last_saved_file_; }
+
   ScannerSettings getSettings() const;
   void setSettings(const ScannerSettings& settings);
 
@@ -99,8 +115,24 @@ private:
   // Ensures the loaded DIB is in 24-bit RGB format (required for uniform processing).
   bool ensure24BitDib();
 
-  // Applies pixel type conversion (BW threshold or gray) and swaps R/B channels for RGB.
+  // Scales the image so that the output pixel dimensions match the requested
+  // DPI.  Source DPI is read from the image metadata (defaults to 300 if
+  // missing).  scale = target / source; FreeImage_Rescale is used.
+  bool applyResolutionScaling();
+
+  // Applies pixel type conversion (BW threshold or gray).  Also sets DPI
+  // metadata to match the requested resolution so the output files / DIB
+  // carry the correct DPI tags.
   bool applyPixelFormat();
+
+  // Writes the requested resolution into the DIB using both FreeImage's
+  // pixels-per-meter fields and EXIF/TIFF resolution tags.  This is called
+  // immediately before saving as some conversions can drop metadata.
+  void applyDpiMetadata();
+
+  // Patches the saved file when a format needs container-level DPI fields that
+  // FreeImage may omit (for example PNG pHYs for Windows Explorer details).
+  void patchSavedDpiMetadata(FREE_IMAGE_FORMAT fif, const std::string& path);
 
   // Calculates DIB-compatible bytes-per-row and resets the scan line counter.
   void calculateRowParams();
@@ -119,6 +151,10 @@ private:
   std::string image_dir_;
   std::string default_image_path_;
   ScannerSettings settings_;
+  std::string output_dir_;
+  int output_format_;       // FreeImage format index (0=PNG, 1=JPG, etc.)
+  std::string output_filename_;  // Base filename (no extension); empty = auto.
+  std::string last_saved_file_;
 
 public:
   // DLL module handle, set during DLL_PROCESS_ATTACH.

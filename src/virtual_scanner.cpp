@@ -12,6 +12,7 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <vector>
 #pragma comment(lib, "shlwapi.lib")
 #ifdef DS_DEBUG_LOG
   #define DS_LOG(msg) OutputDebugStringA(msg)
@@ -24,13 +25,304 @@
 #endif
 HMODULE VirtualScanner::g_hinstance = nullptr;
 
+namespace {
+
+DWORD readBigEndian32(const std::vector<BYTE>& data, size_t offset) {
+  return (static_cast<DWORD>(data[offset]) << 24) |
+         (static_cast<DWORD>(data[offset + 1]) << 16) |
+         (static_cast<DWORD>(data[offset + 2]) << 8) |
+         static_cast<DWORD>(data[offset + 3]);
+}
+
+WORD readLittleEndian16(const std::vector<BYTE>& data, size_t offset) {
+  return static_cast<WORD>(data[offset] |
+      (static_cast<WORD>(data[offset + 1]) << 8));
+}
+
+DWORD readLittleEndian32(const std::vector<BYTE>& data, size_t offset) {
+  return static_cast<DWORD>(data[offset]) |
+         (static_cast<DWORD>(data[offset + 1]) << 8) |
+         (static_cast<DWORD>(data[offset + 2]) << 16) |
+         (static_cast<DWORD>(data[offset + 3]) << 24);
+}
+
+void writeLittleEndian16(std::vector<BYTE>& data, size_t offset, WORD value) {
+  data[offset] = static_cast<BYTE>(value & 0xFF);
+  data[offset + 1] = static_cast<BYTE>((value >> 8) & 0xFF);
+}
+
+void writeLittleEndian32(std::vector<BYTE>& data, size_t offset, DWORD value) {
+  data[offset] = static_cast<BYTE>(value & 0xFF);
+  data[offset + 1] = static_cast<BYTE>((value >> 8) & 0xFF);
+  data[offset + 2] = static_cast<BYTE>((value >> 16) & 0xFF);
+  data[offset + 3] = static_cast<BYTE>((value >> 24) & 0xFF);
+}
+
+void writeBigEndian16(std::vector<BYTE>& data, size_t offset, WORD value) {
+  data[offset] = static_cast<BYTE>((value >> 8) & 0xFF);
+  data[offset + 1] = static_cast<BYTE>(value & 0xFF);
+}
+
+void writeBigEndian32(std::vector<BYTE>& data, size_t offset, DWORD value) {
+  data[offset] = static_cast<BYTE>((value >> 24) & 0xFF);
+  data[offset + 1] = static_cast<BYTE>((value >> 16) & 0xFF);
+  data[offset + 2] = static_cast<BYTE>((value >> 8) & 0xFF);
+  data[offset + 3] = static_cast<BYTE>(value & 0xFF);
+}
+
+WORD dpiToJpegDensity(float dpi) {
+  if (dpi <= 0.0f) return 300;
+  if (dpi > 65535.0f) return 65535;
+  return static_cast<WORD>(dpi + 0.5f);
+}
+
+DWORD dpiToPixelsPerMeter(float dpi) {
+  if (dpi <= 0.0f) dpi = 300.0f;
+  return static_cast<DWORD>(dpi * 39.3700787f + 0.5f);
+}
+
+DWORD crc32Png(const BYTE* data, size_t length) {
+  DWORD crc = 0xFFFFFFFFu;
+  for (size_t i = 0; i < length; ++i) {
+    crc ^= data[i];
+    for (int bit = 0; bit < 8; ++bit) {
+      crc = (crc & 1) ? ((crc >> 1) ^ 0xEDB88320u) : (crc >> 1);
+    }
+  }
+  return crc ^ 0xFFFFFFFFu;
+}
+
+std::vector<BYTE> makePngPhysChunk(float x_dpi, float y_dpi) {
+  std::vector<BYTE> chunk(21, 0);
+  writeBigEndian32(chunk, 0, 9);
+  chunk[4] = 'p';
+  chunk[5] = 'H';
+  chunk[6] = 'Y';
+  chunk[7] = 's';
+  // PNG pHYs stores pixels per meter.  The scanner UI and Windows Explorer
+  // details show pixels per inch (DPI/PPI), so convert DPI to the PNG unit:
+  //     pixels_per_meter = dpi / 0.0254 = dpi * 39.3700787
+  // Windows converts this back and displays the expected DPI value.
+  DWORD x_pixels_per_meter = dpiToPixelsPerMeter(x_dpi);
+  DWORD y_pixels_per_meter = dpiToPixelsPerMeter(y_dpi);
+  writeBigEndian32(chunk, 8, x_pixels_per_meter);
+  writeBigEndian32(chunk, 12, y_pixels_per_meter);
+  chunk[16] = 1;  // PNG pHYs unit specifier: meter.
+  DWORD crc = crc32Png(&chunk[4], 13);
+  writeBigEndian32(chunk, 17, crc);
+  return chunk;
+}
+
+std::vector<BYTE> makeJpegJfifApp0Segment(float x_dpi, float y_dpi) {
+  std::vector<BYTE> segment(18, 0);
+  segment[0] = 0xFF;
+  segment[1] = 0xE0;
+  writeBigEndian16(segment, 2, 16);  // APP0 payload length, includes length bytes.
+  segment[4] = 'J';
+  segment[5] = 'F';
+  segment[6] = 'I';
+  segment[7] = 'F';
+  segment[8] = 0;
+  segment[9] = 1;   // Version 1.01.
+  segment[10] = 1;
+  segment[11] = 1;  // Density unit: dots per inch.
+  writeBigEndian16(segment, 12, dpiToJpegDensity(x_dpi));
+  writeBigEndian16(segment, 14, dpiToJpegDensity(y_dpi));
+  segment[16] = 0;  // No thumbnail.
+  segment[17] = 0;
+  return segment;
+}
+
+bool readFileBytes(const std::string& path, std::vector<BYTE>& data) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in.is_open()) return false;
+  data.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+  return true;
+}
+
+bool writeFileBytes(const std::string& path, const std::vector<BYTE>& data) {
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) return false;
+  out.write(reinterpret_cast<const char*>(data.data()), data.size());
+  return out.good();
+}
+
+bool patchBmpDpiMetadata(const std::string& path, float x_dpi, float y_dpi) {
+  std::vector<BYTE> data;
+  if (!readFileBytes(path, data)) return false;
+  if (data.size() < 46 || data[0] != 'B' || data[1] != 'M') return false;
+  DWORD dib_header_size = readLittleEndian32(data, 14);
+  if (dib_header_size < 40 || data.size() < 14 + dib_header_size) return false;
+
+  writeLittleEndian32(data, 38, dpiToPixelsPerMeter(x_dpi));
+  writeLittleEndian32(data, 42, dpiToPixelsPerMeter(y_dpi));
+  return writeFileBytes(path, data);
+}
+
+WORD readTiff16(const std::vector<BYTE>& data, size_t offset, bool little_endian) {
+  if (little_endian) return readLittleEndian16(data, offset);
+  return static_cast<WORD>((data[offset] << 8) | data[offset + 1]);
+}
+
+DWORD readTiff32(const std::vector<BYTE>& data, size_t offset, bool little_endian) {
+  if (little_endian) return readLittleEndian32(data, offset);
+  return readBigEndian32(data, offset);
+}
+
+void writeTiff16(std::vector<BYTE>& data, size_t offset, WORD value,
+                 bool little_endian) {
+  if (little_endian) writeLittleEndian16(data, offset, value);
+  else writeBigEndian16(data, offset, value);
+}
+
+void writeTiff32(std::vector<BYTE>& data, size_t offset, DWORD value,
+                 bool little_endian) {
+  if (little_endian) writeLittleEndian32(data, offset, value);
+  else writeBigEndian32(data, offset, value);
+}
+
+bool patchTiffDpiMetadata(const std::string& path, float x_dpi, float y_dpi) {
+  std::vector<BYTE> data;
+  if (!readFileBytes(path, data)) return false;
+  if (data.size() < 8) return false;
+
+  bool little_endian = false;
+  if (data[0] == 'I' && data[1] == 'I') little_endian = true;
+  else if (data[0] == 'M' && data[1] == 'M') little_endian = false;
+  else return false;
+  if (readTiff16(data, 2, little_endian) != 42) return false;
+
+  DWORD ifd_offset = readTiff32(data, 4, little_endian);
+  if (ifd_offset + 2 > data.size()) return false;
+  WORD entry_count = readTiff16(data, ifd_offset, little_endian);
+  size_t entries = ifd_offset + 2;
+  if (entries + static_cast<size_t>(entry_count) * 12 + 4 > data.size()) {
+    return false;
+  }
+
+  DWORD x_num = static_cast<DWORD>(x_dpi * 100.0f + 0.5f);
+  DWORD y_num = static_cast<DWORD>(y_dpi * 100.0f + 0.5f);
+  const DWORD denominator = 100;
+  bool patched_any = false;
+
+  for (WORD i = 0; i < entry_count; ++i) {
+    size_t entry = entries + static_cast<size_t>(i) * 12;
+    WORD tag = readTiff16(data, entry, little_endian);
+    WORD type = readTiff16(data, entry + 2, little_endian);
+    DWORD count = readTiff32(data, entry + 4, little_endian);
+    DWORD value_offset = readTiff32(data, entry + 8, little_endian);
+
+    if ((tag == 282 || tag == 283) && type == 5 && count == 1 &&
+        value_offset + 8 <= data.size()) {
+      writeTiff32(data, value_offset, (tag == 282) ? x_num : y_num,
+                  little_endian);
+      writeTiff32(data, value_offset + 4, denominator, little_endian);
+      patched_any = true;
+    } else if (tag == 296 && type == 3 && count == 1) {
+      // ResolutionUnit = 2 means inch, so X/YResolution are pixels per inch.
+      writeTiff16(data, entry + 8, 2, little_endian);
+      patched_any = true;
+    }
+  }
+
+  return patched_any ? writeFileBytes(path, data) : false;
+}
+
+bool patchJpegDpiMetadata(const std::string& path, float x_dpi, float y_dpi) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in.is_open()) return false;
+  std::vector<BYTE> data((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+  in.close();
+  if (data.size() < 4 || data[0] != 0xFF || data[1] != 0xD8) return false;
+
+  WORD x_density = dpiToJpegDensity(x_dpi);
+  WORD y_density = dpiToJpegDensity(y_dpi);
+  size_t pos = 2;
+  while (pos + 4 <= data.size()) {
+    if (data[pos] != 0xFF) break;
+    BYTE marker = data[pos + 1];
+    if (marker == 0xDA || marker == 0xD9) break;
+    if (marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
+      pos += 2;
+      continue;
+    }
+    WORD length = static_cast<WORD>((data[pos + 2] << 8) | data[pos + 3]);
+    if (length < 2 || pos + 2 + length > data.size()) break;
+    if (marker == 0xE0 && length >= 16 && pos + 18 <= data.size() &&
+        data[pos + 4] == 'J' && data[pos + 5] == 'F' &&
+        data[pos + 6] == 'I' && data[pos + 7] == 'F' && data[pos + 8] == 0) {
+      data[pos + 11] = 1;  // Density unit: dots per inch.
+      writeBigEndian16(data, pos + 12, x_density);
+      writeBigEndian16(data, pos + 14, y_density);
+      std::ofstream out(path, std::ios::binary | std::ios::trunc);
+      if (!out.is_open()) return false;
+      out.write(reinterpret_cast<const char*>(data.data()), data.size());
+      return out.good();
+    }
+    pos += 2 + length;
+  }
+
+  std::vector<BYTE> app0 = makeJpegJfifApp0Segment(x_dpi, y_dpi);
+  data.insert(data.begin() + 2, app0.begin(), app0.end());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) return false;
+  out.write(reinterpret_cast<const char*>(data.data()), data.size());
+  return out.good();
+}
+
+bool patchPngDpiMetadata(const std::string& path, float x_dpi, float y_dpi) {
+  static const BYTE kPngSignature[8] = {137, 80, 78, 71, 13, 10, 26, 10};
+  std::ifstream in(path, std::ios::binary);
+  if (!in.is_open()) return false;
+  std::vector<BYTE> data((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+  in.close();
+  if (data.size() < 33 ||
+      std::memcmp(data.data(), kPngSignature, sizeof(kPngSignature)) != 0) {
+    return false;
+  }
+
+  std::vector<BYTE> phys = makePngPhysChunk(x_dpi, y_dpi);
+  size_t pos = sizeof(kPngSignature);
+  size_t insert_pos = 0;
+  while (pos + 12 <= data.size()) {
+    DWORD length = readBigEndian32(data, pos);
+    if (pos + 12 + length > data.size()) return false;
+    char type[5] = {
+        static_cast<char>(data[pos + 4]), static_cast<char>(data[pos + 5]),
+        static_cast<char>(data[pos + 6]), static_cast<char>(data[pos + 7]), 0};
+    if (std::strcmp(type, "pHYs") == 0) {
+      data.erase(data.begin() + pos, data.begin() + pos + 12 + length);
+      data.insert(data.begin() + pos, phys.begin(), phys.end());
+      std::ofstream out(path, std::ios::binary | std::ios::trunc);
+      if (!out.is_open()) return false;
+      out.write(reinterpret_cast<const char*>(data.data()), data.size());
+      return out.good();
+    }
+    if (std::strcmp(type, "IHDR") == 0) {
+      insert_pos = pos + 12 + length;
+    }
+    pos += 12 + length;
+  }
+  if (insert_pos == 0 || insert_pos > data.size()) return false;
+  data.insert(data.begin() + insert_pos, phys.begin(), phys.end());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) return false;
+  out.write(reinterpret_cast<const char*>(data.data()), data.size());
+  return out.good();
+}
+
+}  // namespace
+
 VirtualScanner::VirtualScanner()
     : dib_(nullptr),
       scan_line_(0),
       locked_(false),
       dest_bytes_per_row_(0),
       row_offset_(0),
-      current_image_index_(0) {
+      current_image_index_(0),
+      output_format_(0) {
   default_image_path_ = getDefaultImagePath();
   scanImageDirectory();
   loadImageIndex();
@@ -152,6 +444,7 @@ bool VirtualScanner::acquireImage() {
 bool VirtualScanner::preScanPrep() {
   if (dib_ == nullptr) return false;
   if (!ensure24BitDib()) return false;
+  if (!applyResolutionScaling()) return false;
   if (!applyPixelFormat()) return false;
   calculateRowParams();
   return true;
@@ -166,40 +459,132 @@ bool VirtualScanner::ensure24BitDib() {
   return dib_ != nullptr;
 }
 
-// Applies the requested pixel type: R/B channel swap for RGB,
-// BW threshold or grayscale conversion via FreeImage.
+// Scales the image to match the requested DPI.  Reads the source DPI from
+// image metadata (uses 300 as a sensible default when no metadata is present
+// or when the embedded value is screen-resolution like 72).  Computes the
+// output pixel dimensions as:
+//     new_w = round(src_w * target_dpi / src_dpi)
+//     new_h = round(src_h * target_dpi / src_dpi)
+// Skips rescaling when the scale factor is within 1 % of 1.0.
+bool VirtualScanner::applyResolutionScaling() {
+  if (dib_ == nullptr) return false;
+  // Determine source DPI.  FreeImage returns 0 or a very low screen value
+  // (72 / ~2835 dpM) for images without embedded DPI; default to 300.
+  float src_dpm_x = static_cast<float>(FreeImage_GetDotsPerMeterX(dib_));
+  float src_dpi_x = (src_dpm_x > 100.0f) ? src_dpm_x / 39.37f : 300.0f;
+  // Use the x-resolution target; round to a reasonable precision.
+  float tgt_dpi = settings_.x_resolution;
+  if (tgt_dpi <= 0.0f) tgt_dpi = 300.0f;
+  float scale = tgt_dpi / src_dpi_x;
+  // If we are within 1 % of 1:1, nothing to do.
+  if (scale >= 0.99f && scale <= 1.01f) return true;
+  int src_w = FreeImage_GetWidth(dib_);
+  int src_h = FreeImage_GetHeight(dib_);
+  int new_w = static_cast<int>(static_cast<float>(src_w) * scale + 0.5f);
+  int new_h = static_cast<int>(static_cast<float>(src_h) * scale + 0.5f);
+  if (new_w < 1) new_w = 1;
+  if (new_h < 1) new_h = 1;
+  FIBITMAP* scaled = FreeImage_Rescale(dib_, new_w, new_h, FILTER_BILINEAR);
+  if (scaled == nullptr) return false;
+  FreeImage_Unload(dib_);
+  dib_ = scaled;
+  // Transfer the desired DPI to the rescaled image.
+  FreeImage_SetDotsPerMeterX(dib_,
+      static_cast<unsigned>(tgt_dpi * 39.37f + 0.5f));
+  FreeImage_SetDotsPerMeterY(dib_,
+      static_cast<unsigned>(settings_.y_resolution * 39.37f + 0.5f));
+  return true;
+}
+
+// Applies the requested pixel type: BW threshold or grayscale conversion via
+// FreeImage.  For RGB, no channel swap is needed: FreeImage stores 24-bit
+// pixels in BGR order, which is exactly what Windows DIB / BMP format expects,
+// so the raw scanline bytes can be copied through unchanged for both native
+// transfer and file save.
 // Also sets the DPI metadata based on current resolution settings.
 bool VirtualScanner::applyPixelFormat() {
-  // RGB mode: swap R/B channels (FreeImage stores BGR internally).
-  if (settings_.pixel_type == TWPT_RGB) {
-    int w = FreeImage_GetWidth(dib_);
-    int h = FreeImage_GetHeight(dib_);
-    for (int y = 0; y < h; ++y) {
-      BYTE* line = FreeImage_GetScanLine(dib_, y);
-      for (int x = 0; x < w; ++x) {
-        std::swap(line[x * 3 + 0], line[x * 3 + 2]);
-      }
-    }
-  }
-
-  // Set DPI metadata.
-  FreeImage_SetDotsPerMeterX(dib_,
-      static_cast<unsigned>(settings_.x_resolution * 39.37 + 0.5));
-  FreeImage_SetDotsPerMeterY(dib_,
-      static_cast<unsigned>(settings_.y_resolution * 39.37 + 0.5));
-
   // Non-RGB modes: convert to BW or grayscale.
-  if (settings_.pixel_type == TWPT_RGB) return true;
-  FIBITMAP* converted = nullptr;
-  if (settings_.pixel_type == TWPT_BW) {
-    converted = FreeImage_Threshold(dib_, 128);
-  } else if (settings_.pixel_type == TWPT_GRAY) {
-    converted = FreeImage_ConvertTo8Bits(dib_);
+  if (settings_.pixel_type != TWPT_RGB) {
+    FIBITMAP* converted = nullptr;
+    if (settings_.pixel_type == TWPT_BW) {
+      converted = FreeImage_Threshold(dib_, 128);
+    } else if (settings_.pixel_type == TWPT_GRAY) {
+      converted = FreeImage_ConvertTo8Bits(dib_);
+    }
+    if (converted == nullptr) return false;
+    FreeImage_Unload(dib_);
+    dib_ = converted;
   }
-  if (converted == nullptr) return false;
-  FreeImage_Unload(dib_);
-  dib_ = converted;
+
+  applyDpiMetadata();
   return true;
+}
+
+void VirtualScanner::applyDpiMetadata() {
+  if (dib_ == nullptr) return;
+
+  float x_dpi = settings_.x_resolution;
+  float y_dpi = settings_.y_resolution;
+  if (x_dpi <= 0.0f) x_dpi = 300.0f;
+  if (y_dpi <= 0.0f) y_dpi = x_dpi;
+
+  FreeImage_SetDotsPerMeterX(dib_,
+      static_cast<unsigned>(x_dpi * 39.37f + 0.5f));
+  FreeImage_SetDotsPerMeterY(dib_,
+      static_cast<unsigned>(y_dpi * 39.37f + 0.5f));
+
+  // Some applications inspect EXIF/TIFF tags rather than the bitmap header's
+  // pixels-per-meter fields.  Write both so PNG/JPEG/TIFF/BMP outputs carry
+  // discoverable DPI metadata after FreeImage_Save().
+  struct Rational {
+    DWORD numerator;
+    DWORD denominator;
+  };
+  const WORD kXResolution = 0x011A;
+  const WORD kYResolution = 0x011B;
+  const WORD kResolutionUnit = 0x0128;
+  Rational x_res = { static_cast<DWORD>(x_dpi * 100.0f + 0.5f), 100 };
+  Rational y_res = { static_cast<DWORD>(y_dpi * 100.0f + 0.5f), 100 };
+  WORD inch_unit = 2;
+
+  auto set_tag = [&](const char* key, WORD id, FREE_IMAGE_MDTYPE type,
+                     DWORD count, DWORD length, const void* value) {
+    FITAG* tag = FreeImage_CreateTag();
+    if (tag == nullptr) return;
+    FreeImage_SetTagKey(tag, key);
+    FreeImage_SetTagID(tag, id);
+    FreeImage_SetTagType(tag, type);
+    FreeImage_SetTagCount(tag, count);
+    FreeImage_SetTagLength(tag, length);
+    FreeImage_SetTagValue(tag, value);
+    FreeImage_SetMetadata(FIMD_EXIF_MAIN, dib_, key, tag);
+    FreeImage_DeleteTag(tag);
+  };
+
+  set_tag("XResolution", kXResolution, FIDT_RATIONAL, 1,
+          sizeof(x_res), &x_res);
+  set_tag("YResolution", kYResolution, FIDT_RATIONAL, 1,
+          sizeof(y_res), &y_res);
+  set_tag("ResolutionUnit", kResolutionUnit, FIDT_SHORT, 1,
+          sizeof(inch_unit), &inch_unit);
+}
+
+void VirtualScanner::patchSavedDpiMetadata(FREE_IMAGE_FORMAT fif,
+                                           const std::string& path) {
+  float x_dpi = settings_.x_resolution;
+  float y_dpi = settings_.y_resolution;
+  if (x_dpi <= 0.0f) x_dpi = 300.0f;
+  if (y_dpi <= 0.0f) y_dpi = x_dpi;
+
+  if (fif == FIF_PNG) {
+    patchPngDpiMetadata(path, x_dpi, y_dpi);
+  } else if (fif == FIF_JPEG) {
+    patchJpegDpiMetadata(path, x_dpi, y_dpi);
+  } else if (fif == FIF_BMP) {
+    patchBmpDpiMetadata(path, x_dpi, y_dpi);
+  } else if (fif == FIF_TIFF) {
+    patchTiffDpiMetadata(path, x_dpi, y_dpi);
+  }
 }
 
 // Calculates DIB-compatible bytes-per-row (DWORD-aligned) and
@@ -318,4 +703,68 @@ int VirtualScanner::getImageHeight() const {
 int VirtualScanner::getBitsPerPixel() const {
   if (dib_ == nullptr) return 0;
   return FreeImage_GetBPP(dib_);
+}
+bool VirtualScanner::saveImageToFile() {
+  if (dib_ == nullptr || output_dir_.empty()) return false;
+  static const FREE_IMAGE_FORMAT kFiFmts[] = {FIF_PNG, FIF_JPEG, FIF_BMP, FIF_TIFF};
+  static const char* kExts[] = {".png", ".jpg", ".bmp", ".tif"};
+  FREE_IMAGE_FORMAT fif = kFiFmts[output_format_];
+  // Ensure directory exists
+  SHCreateDirectoryExA(nullptr, output_dir_.c_str(), nullptr);
+  // Use the user-supplied filename if any; otherwise generate a timestamped one.
+  char fname[MAX_PATH];
+  if (!output_filename_.empty()) {
+    _snprintf_s(fname, sizeof(fname), "%s%s",
+                output_filename_.c_str(), kExts[output_format_]);
+  } else {
+    SYSTEMTIME st;
+    GetLocalTime(&st);
+    _snprintf_s(fname, sizeof(fname), "scan_%04d%02d%02d_%02d%02d%02d%s",
+                st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond,
+                kExts[output_format_]);
+  }
+  last_saved_file_ = output_dir_ + "\\" + fname;
+  applyDpiMetadata();
+  int flags = (fif == FIF_JPEG) ? 85 : 0;
+  bool saved = FreeImage_Save(fif, dib_, last_saved_file_.c_str(), flags) != FALSE;
+  if (saved) patchSavedDpiMetadata(fif, last_saved_file_);
+  return saved;
+}
+
+bool VirtualScanner::saveImageToPath(const std::string& path) {
+  if (dib_ == nullptr || path.empty()) return false;
+  // Resolve to an absolute path if relative.
+  char abs_path[MAX_PATH] = {};
+  if (PathIsRelativeA(path.c_str())) {
+    char cwd[MAX_PATH] = {};
+    GetCurrentDirectoryA(MAX_PATH, cwd);
+    _snprintf_s(abs_path, sizeof(abs_path), "%s\\%s", cwd, path.c_str());
+  } else {
+    _snprintf_s(abs_path, sizeof(abs_path), "%s", path.c_str());
+  }
+  // Derive format from the extension; default to PNG.
+  FREE_IMAGE_FORMAT fif = FIF_PNG;
+  auto dot = std::string(abs_path).find_last_of('.');
+  if (dot != std::string::npos) {
+    std::string ext = std::string(abs_path).substr(dot + 1);
+    std::transform(ext.begin(), ext.end(), ext.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (ext == "png") fif = FIF_PNG;
+    else if (ext == "jpg" || ext == "jpeg") fif = FIF_JPEG;
+    else if (ext == "bmp") fif = FIF_BMP;
+    else if (ext == "tif" || ext == "tiff") fif = FIF_TIFF;
+  }
+  // Ensure the output directory exists.
+  std::string dir(abs_path);
+  auto slash = dir.find_last_of("\\/");
+  if (slash != std::string::npos) {
+    dir = dir.substr(0, slash);
+    SHCreateDirectoryExA(nullptr, dir.c_str(), nullptr);
+  }
+  last_saved_file_ = abs_path;
+  applyDpiMetadata();
+  int flags = (fif == FIF_JPEG) ? 85 : 0;
+  bool saved = FreeImage_Save(fif, dib_, abs_path, flags) != FALSE;
+  if (saved) patchSavedDpiMetadata(fif, abs_path);
+  return saved;
 }

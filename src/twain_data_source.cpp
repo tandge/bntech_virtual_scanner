@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <cstring>
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 
 // --- DSM Interface (formerly dsm_interface.cpp) ---
@@ -160,6 +161,8 @@ TW_INT16 TwainDataSource::initialize() {
 TW_UINT16 TwainDataSource::dsEntry(pTW_IDENTITY origin, TW_UINT32 dg,
                                      TW_UINT16 dat, TW_UINT16 msg,
                                      TW_MEMREF data) {
+  DS_LOG_FMT("ds: dsEntry dg=0x%04X dat=0x%04X msg=0x%04X state=%d\n",
+             dg, dat, msg, static_cast<int>(state_));
   if (dg == DG_CONTROL) {
     switch (dat) {
       case DAT_EVENT:
@@ -182,6 +185,8 @@ TW_UINT16 TwainDataSource::dsEntry(pTW_IDENTITY origin, TW_UINT32 dg,
         return handleDatXferGroup(msg, static_cast<pTW_UINT32>(data));
       case DAT_IMAGELAYOUT:
         return handleDatImageLayout(msg, static_cast<pTW_IMAGELAYOUT>(data));
+      case DAT_SETUPFILEXFER:
+        return handleDatSetupFileXfer(msg, static_cast<pTW_SETUPFILEXFER>(data));
       default:
         condition_code_ = TWCC_BADPROTOCOL;
         return TWRC_FAILURE;
@@ -198,6 +203,8 @@ TW_UINT16 TwainDataSource::dsEntry(pTW_IDENTITY origin, TW_UINT32 dg,
         }
         condition_code_ = TWCC_BADVALUE;
         return TWRC_FAILURE;
+      case DAT_IMAGEFILEXFER:
+        return handleDatImageFileXfer(msg, static_cast<pTW_SETUPFILEXFER>(data));
       default:
         condition_code_ = TWCC_CAPUNSUPPORTED;
         return TWRC_FAILURE;
@@ -395,6 +402,98 @@ TW_INT16 TwainDataSource::handleDatImageNativeXfer(TW_UINT16 msg,
   }
   return twrc;
 }
+TW_INT16 TwainDataSource::handleDatImageFileXfer(TW_UINT16 msg,
+                                                    pTW_SETUPFILEXFER data) {
+  if (msg != MSG_GET) {
+    condition_code_ = TWCC_BADPROTOCOL;
+    return TWRC_FAILURE;
+  }
+  if (state_ != DsState::kXferReady) {
+    condition_code_ = TWCC_SEQERROR;
+    return TWRC_FAILURE;
+  }
+  // Lazy save: perform the actual file write now.
+  // If the application supplied a path via DAT_SETUPFILEXFER / MSG_SET,
+  // save directly to that path (resolve relative paths, derive format from
+  // extension).  Otherwise fall back to the UI-configured dir/filename/ext.
+  bool ok;
+  if (!app_file_path_.empty()) {
+    ok = scanner_.saveImageToPath(app_file_path_);
+  } else {
+    ok = scanner_.saveImageToFile();
+  }
+  if (!ok) {
+    condition_code_ = TWCC_BUMMER;
+    return TWRC_FAILURE;
+  }
+  std::string path = scanner_.getLastSavedFilePath();
+  if (path.empty()) {
+    condition_code_ = TWCC_BUMMER;
+    return TWRC_FAILURE;
+  }
+  if (data != nullptr) {
+    std::strncpy(reinterpret_cast<char*>(data->FileName),
+                 path.c_str(), 255);
+    data->FileName[254] = '\0';
+    int ff = TWFF_PNG;
+    caps_.getCurrentValue(ICAP_IMAGEFILEFORMAT, ff);
+    data->Format = static_cast<TW_UINT16>(ff);
+    data->VRefNum = 0;
+  }
+  state_ = DsState::kXferring;
+  return TWRC_XFERDONE;
+}
+
+// DAT_SETUPFILEXFER:  The application uses MSG_SET to tell the DS where to
+// save the next image (path + format), and MSG_GET / MSG_GETDEFAULT to read
+// back the current/default setup.  MSG_RESET clears any app-supplied path.
+TW_INT16 TwainDataSource::handleDatSetupFileXfer(TW_UINT16 msg,
+                                                    pTW_SETUPFILEXFER data) {
+  if (data == nullptr) {
+    condition_code_ = TWCC_BADVALUE;
+    return TWRC_FAILURE;
+  }
+  static const int kTwffMap[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF};
+  switch (msg) {
+    case MSG_SET: {
+      app_file_path_ = reinterpret_cast<const char*>(data->FileName);
+      DS_LOG_FMT("ds: SetupFileXfer SET path='%s' format=%u\n",
+                 app_file_path_.c_str(), data->Format);
+      // Determine format: prefer the supplied Format field, otherwise
+      // derive from the file extension.
+      int ff = data->Format;
+      auto dot = app_file_path_.find_last_of('.');
+      if ((ff == 0 || ff == TWFF_PNG) && dot != std::string::npos) {
+        std::string ext = app_file_path_.substr(dot + 1);
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (ext == "png") ff = TWFF_PNG;
+        else if (ext == "jpg" || ext == "jpeg") ff = TWFF_JFIF;
+        else if (ext == "bmp") ff = TWFF_BMP;
+        else if (ext == "tif" || ext == "tiff") ff = TWFF_TIFF;
+      }
+      caps_.setCurrentValue(ICAP_IMAGEFILEFORMAT, ff);
+      return TWRC_SUCCESS;
+    }
+    case MSG_RESET:
+      app_file_path_.clear();
+      // fall through
+    case MSG_GET:
+    case MSG_GETDEFAULT: {
+      std::strncpy(reinterpret_cast<char*>(data->FileName),
+                   app_file_path_.c_str(), 255);
+      data->FileName[254] = '\0';
+      int ff = TWFF_PNG;
+      caps_.getCurrentValue(ICAP_IMAGEFILEFORMAT, ff);
+      data->Format = static_cast<TW_UINT16>(ff);
+      data->VRefNum = 0;
+      return TWRC_SUCCESS;
+    }
+    default:
+      condition_code_ = TWCC_BADPROTOCOL;
+      return TWRC_FAILURE;
+  }
+}
 // Opens a TWAIN connection.  Rejects if already connected to an app
 // or if not in kLoaded state.  Resets the virtual scanner on success.
 TW_INT16 TwainDataSource::openDs(pTW_IDENTITY origin) {
@@ -424,6 +523,7 @@ TW_INT16 TwainDataSource::closeDs() {
   }
   scanner_.unlock();
   std::memset(&app_, 0, sizeof(app_));
+  app_file_path_.clear();
   state_ = DsState::kLoaded;
   return TWRC_SUCCESS;
 }
@@ -443,23 +543,78 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
   scanner_.lock();
   if (data->ShowUI) {
     SettingsServer server;
-    SettingsUiResult ui_result;
+    SettingsUiResult ui_result = {};
+    int cur_pt = TWPT_RGB, cur_res = 300, cur_mech = TWSX_NATIVE, cur_ff = TWFF_PNG;
+    caps_.getCurrentValue(ICAP_PIXELTYPE, cur_pt);
+    caps_.getCurrentValue(ICAP_XRESOLUTION, cur_res);
+    caps_.getCurrentValue(ICAP_XFERMECH, cur_mech);
+    caps_.getCurrentValue(ICAP_IMAGEFILEFORMAT, cur_ff);
+    ui_result.pixel_type = cur_pt;
+    ui_result.resolution = cur_res;
+    ui_result.transfer_mode = (cur_mech == static_cast<int>(TWSX_FILE)) ? 1 : 0;
+    static const int kTwffToIdx[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF};
+    for (int i = 0; i < 4; ++i) {
+      if (kTwffToIdx[i] == cur_ff) { ui_result.file_format = i; break; }
+    }
+    // When the application has already chosen File-transfer mode, the
+    // destination file path is owned by the application: it will be
+    // supplied via DAT_SETUPFILEXFER / MSG_SET (which can arrive AFTER
+    // this UI is dismissed, e.g. TWACK).  In that case hide the output
+    // fields entirely so we don't show stale/empty values that would
+    // mislead the user, and so we don't overwrite the app's path.
+    ui_result.app_managed_file_output =
+        (cur_mech == static_cast<int>(TWSX_FILE));
+    if (!ui_result.app_managed_file_output) {
+      // Native default UI path: pre-fill a timestamped default filename
+      // in case the user switches to File mode.
+      SYSTEMTIME st;
+      GetLocalTime(&st);
+      _snprintf_s(ui_result.output_filename, MAX_PATH,
+                  "scan_%04d%02d%02d_%02d%02d%02d",
+                  st.wYear, st.wMonth, st.wDay,
+                  st.wHour, st.wMinute, st.wSecond);
+    }
     if (!server.showSettingsUi("", ui_result) || !ui_result.scan_clicked) {
-      scanner_.unlock();
-      state_ = DsState::kOpen;
+      // User canceled the settings UI.  Stay in kEnabled state and notify
+      // the app via MSG_CLOSEDSREQ; the app will respond with MSG_DISABLEDS
+      // which transitions us back to kOpen via disableDs().
+      doCloseDsRequestEvent();
       condition_code_ = TWCC_SUCCESS;
-      return TWRC_CANCEL;
+      return TWRC_SUCCESS;
     }
     caps_.setCurrentValue(ICAP_PIXELTYPE, ui_result.pixel_type);
     caps_.setCurrentValue(ICAP_XRESOLUTION, ui_result.resolution);
     caps_.setCurrentValue(ICAP_YRESOLUTION, ui_result.resolution);
+    ScannerSettings ui_settings = scanner_.getSettings();
+    ui_settings.pixel_type = ui_result.pixel_type;
+    ui_settings.x_resolution = static_cast<float>(ui_result.resolution);
+    ui_settings.y_resolution = static_cast<float>(ui_result.resolution);
+    scanner_.setSettings(ui_settings);
+    if (ui_result.app_managed_file_output) {
+      // Keep XFERMECH as TWSX_FILE; do not touch dir/filename/format
+      // because the application will set them via DAT_SETUPFILEXFER.
+      caps_.setCurrentValue(ICAP_XFERMECH, static_cast<int>(TWSX_FILE));
+    } else if (ui_result.transfer_mode == 1) {
+      caps_.setCurrentValue(ICAP_XFERMECH, static_cast<int>(TWSX_FILE));
+      static const int kTwffMap[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF};
+      caps_.setCurrentValue(ICAP_IMAGEFILEFORMAT, kTwffMap[ui_result.file_format]);
+      scanner_.setOutputDir(ui_result.output_dir);
+      scanner_.setOutputFormat(ui_result.file_format);
+      scanner_.setOutputFilename(ui_result.output_filename);
+    } else {
+      caps_.setCurrentValue(ICAP_XFERMECH, static_cast<int>(TWSX_NATIVE));
+    }
   }
-  if (!updateScannerFromCaps()) {
+  if (!data->ShowUI && !updateScannerFromCaps()) {
     goto fail;
   }
   if (!scanner_.acquireImage()) {
     goto fail;
   }
+  // For TWSX_FILE we delay the actual save until DAT_IMAGEFILEXFER / MSG_GET
+  // arrives, because the application may set or update the destination path
+  // via DAT_SETUPFILEXFER / MSG_SET any time before that (including in
+  // state 6, after MSG_XFERREADY).
   pending_xfers_.Count = 1;
   xfer_pending_ = true;
   if (doXferReadyEvent()) {
@@ -515,12 +670,12 @@ TW_INT16 TwainDataSource::getImageInfo(pTW_IMAGEINFO info) {
     return TWRC_FAILURE;
   }
   std::memset(info, 0, sizeof(TW_IMAGEINFO));
-  int pt = TWPT_RGB;
-  caps_.getCurrentValue(ICAP_PIXELTYPE, pt);
-  float xr = 300.0f;
-  float yr = 300.0f;
-  caps_.getCurrentValue(ICAP_XRESOLUTION, xr);
-  caps_.getCurrentValue(ICAP_YRESOLUTION, yr);
+  ScannerSettings scanner_settings = scanner_.getSettings();
+  int pt = scanner_settings.pixel_type;
+  float xr = scanner_settings.x_resolution;
+  float yr = scanner_settings.y_resolution;
+  if (xr <= 0.0f) xr = 300.0f;
+  if (yr <= 0.0f) yr = xr;
   info->XResolution = floatToFix32(xr);
   info->YResolution = floatToFix32(yr);
   info->ImageWidth = scanner_.getImageWidth();
@@ -760,8 +915,9 @@ TW_HANDLE TwainDataSource::allocAndFillDibHeader() {
 }
 
 // Copies pixel rows from the locked internal buffer into the DIB pixel area.
-// Rows are stored bottom-up (DIB convention). Swaps R/B for 24-bit RGB images
-// (source is BGR from FreeImage, DIB expects RGB).
+// Rows are stored bottom-up (DIB convention).  No channel swap is needed for
+// 24-bit RGB: FreeImage stores pixels in BGR which matches Windows DIB / BMP
+// expectations, so the raw bytes flow through unchanged.
 bool TwainDataSource::copyDibPixelData(BYTE* dst) {
   DWORD w = image_info_.ImageWidth;
   DWORD hgt = image_info_.ImageLength;
@@ -772,16 +928,7 @@ bool TwainDataSource::copyDibPixelData(BYTE* dst) {
   if (src == nullptr) return false;
   for (DWORD r = 0; r < hgt; ++r) {
     BYTE* sr = src + sbpr * (hgt - r - 1);
-    if (bpp == 24) {
-      // R/B channel swap: FreeImage BGR → DIB RGB.
-      for (DWORD c = 0; c < w; ++c) {
-        dst[c * 3]     = sr[c * 3 + 2];
-        dst[c * 3 + 1] = sr[c * 3 + 1];
-        dst[c * 3 + 2] = sr[c * 3];
-      }
-    } else {
-      std::memcpy(dst, sr, sbpr);
-    }
+    std::memcpy(dst, sr, sbpr);
     // Pad to DWORD alignment.
     if (dbpr > sbpr) {
       std::memset(dst + sbpr, 0, dbpr - sbpr);

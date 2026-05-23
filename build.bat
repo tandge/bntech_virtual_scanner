@@ -1,5 +1,9 @@
 @echo off
+cls
 setlocal enabledelayedexpansion
+set "SCRIPT_PATH=%~f0"
+set "START_DIR=%CD%"
+set "ORIGINAL_ARGS=%*"
 
 set "VSBASE=C:\Program Files\Microsoft Visual Studio\2022\Professional"
 set "VCVARS=%VSBASE%\VC\Auxiliary\Build\vcvarsall.bat"
@@ -8,6 +12,14 @@ set "NINJA=%VSBASE%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe
 
 :: Default build type.
 set "BUILD_TYPE=Release"
+
+:: With no arguments, build both architectures and install them.
+if "%~1"=="" set "INSTALL_AFTER_BUILD=1"
+
+:: Install to C:\Windows requires administrator rights.  When a no-argument
+:: build will auto-install, relaunch this script elevated before building so
+:: the install step does not fail after the build completes.
+if defined INSTALL_AFTER_BUILD call :ensure_admin || exit /b 1
 
 :: Parse options.
 :parse_args
@@ -31,18 +43,29 @@ if defined CLEAN (
 
 :: Install mode.
 if defined INSTALL (
-    if "%TARGET%"=="win32" ("%VS_CMAKE%" --install build/win32 --prefix C:/Windows & goto :eof)
-    if "%TARGET%"=="win64" ("%VS_CMAKE%" --install build/win64 --prefix C:/Windows & goto :eof)
-    "%VS_CMAKE%" --install build/win32 --prefix C:/Windows
-    "%VS_CMAKE%" --install build/win64 --prefix C:/Windows
+    call :ensure_admin || exit /b 1
+    if "%TARGET%"=="win32" (call :install_one win32 & goto :eof)
+    if "%TARGET%"=="win64" (call :install_one win64 & goto :eof)
+    call :install_one win32 || exit /b 1
+    call :install_one win64 || exit /b 1
     goto :eof)
 
 :: Build mode.
-if "%TARGET%"=="win32" (call :b x86 "%BUILD_TYPE%" & goto :eof)
-if "%TARGET%"=="win64" (call :b x64 "%BUILD_TYPE%" & goto :eof)
-:: Default: build both.
-call :b x86 "%BUILD_TYPE%"
-call :b x64 "%BUILD_TYPE%"
+if "%TARGET%"=="win32" (
+    call :b x86 "%BUILD_TYPE%" || exit /b 1
+    if defined INSTALL_AFTER_BUILD call :install_one win32 || exit /b 1
+    goto :eof)
+if "%TARGET%"=="win64" (
+    call :b x64 "%BUILD_TYPE%" || exit /b 1
+    if defined INSTALL_AFTER_BUILD call :install_one win64 || exit /b 1
+    goto :eof)
+:: Default: build both.  With no arguments, also install both.
+call :b x86 "%BUILD_TYPE%" || exit /b 1
+call :b x64 "%BUILD_TYPE%" || exit /b 1
+if defined INSTALL_AFTER_BUILD (
+    call :install_one win32 || exit /b 1
+    call :install_one win64 || exit /b 1
+)
 goto :eof
 
 :b
@@ -57,3 +80,31 @@ echo Building %OUTDIR% (%BUILD_TYPE%)...
 if errorlevel 1 exit /b 1
 "%VS_CMAKE%" --build build/!OUTDIR!
 exit /b
+
+:install_one
+set "INSTALL_ARCH=%~1"
+if /i "%INSTALL_ARCH%"=="win32" set "INSTALL_DS=%SystemRoot%\twain_32\bntech\bntech_virtual_scanner.ds"
+if /i "%INSTALL_ARCH%"=="win64" set "INSTALL_DS=%SystemRoot%\twain_64\bntech\bntech_virtual_scanner.ds"
+if defined INSTALL_DS call :check_not_locked "%INSTALL_DS%" || exit /b 1
+"%VS_CMAKE%" --install build/%~1 --prefix C:/Windows
+exit /b
+
+:check_not_locked
+if not exist "%~1" exit /b 0
+powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $f=[System.IO.File]::Open('%~1','Open','ReadWrite','None'); $f.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+if not errorlevel 1 exit /b 0
+echo.
+echo Cannot install: "%~1" is currently in use.
+echo Please close XnView / scanning applications that may have loaded the TWAIN driver,
+echo then run build.bat again.
+echo.
+exit /b 1
+
+:ensure_admin
+net session >nul 2>&1
+if not errorlevel 1 exit /b 0
+
+echo Administrator rights are required to install to C:\Windows.
+echo Requesting elevation...
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process -FilePath '%COMSPEC%' -ArgumentList '/c cd /d \"%START_DIR%\" && \"%SCRIPT_PATH%\" %ORIGINAL_ARGS%' -Verb RunAs -Wait"
+exit /b %ERRORLEVEL%

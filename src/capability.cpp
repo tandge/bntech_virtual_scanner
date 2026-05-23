@@ -25,12 +25,17 @@ void CapabilityManager::addCap(TW_UINT16 id, TW_UINT16 type, TW_UINT16 con_type,
 void CapabilityManager::initialize() {
   caps_.clear();
   addCap(CAP_SUPPORTEDCAPS,  TWTY_UINT16, TWON_ARRAY,       kCapGet, 0);
-  addCap(ICAP_XFERMECH,       TWTY_UINT16, TWON_ONEVALUE,    kCapAll, TWSX_NATIVE,    {TWSX_NATIVE});
+  addCap(ICAP_XFERMECH,       TWTY_UINT16, TWON_ONEVALUE,    kCapAll, TWSX_NATIVE,    {TWSX_NATIVE, TWSX_FILE});
   addCap(ICAP_PIXELTYPE,      TWTY_UINT16, TWON_ENUMERATION, kCapAll, TWPT_RGB,       {TWPT_BW, TWPT_GRAY, TWPT_RGB});
   addCap(ICAP_XRESOLUTION,    TWTY_FIX32,  TWON_ENUMERATION, kCapAll, 300,            {150, 200, 300, 600});
   addCap(ICAP_YRESOLUTION,    TWTY_FIX32,  TWON_ENUMERATION, kCapAll, 300,            {150, 200, 300, 600});
+  // Resolution values are pixels per ICAP_UNITS.  Explicitly advertise inches
+  // so applications that save the native transfer use DPI/PPI instead of a
+  // screen-default fallback such as 96 DPI.
+  addCap(ICAP_UNITS,          TWTY_UINT16, TWON_ONEVALUE,    kCapAll, TWUN_INCHES,      {TWUN_INCHES});
   addCap(CAP_FEEDERENABLED,   TWTY_BOOL,   TWON_ONEVALUE,    kCapGet, FALSE,          {FALSE});
   addCap(ICAP_PIXELFLAVOR,    TWTY_UINT16, TWON_ONEVALUE,    kCapAll, TWPF_CHOCOLATE, {TWPF_CHOCOLATE});
+  addCap(ICAP_IMAGEFILEFORMAT, TWTY_UINT16, TWON_ENUMERATION, kCapAll, TWFF_PNG, {TWFF_TIFF, TWFF_BMP, TWFF_JFIF, TWFF_PNG});
   addCap(CAP_UICONTROLLABLE,  TWTY_BOOL,   TWON_ONEVALUE,    kCapGet, TRUE,           {TRUE});
 }
 
