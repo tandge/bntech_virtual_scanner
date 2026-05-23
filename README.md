@@ -1,63 +1,107 @@
 # BN Tech Virtual Scanner
 
-**Author:** 葛宁 (Ning Ge) \<tandge@gmail.com\>
+**Author:** 葛宁 (Ning Ge) <tandge@gmail.com>
+
+A TWAIN 2.5 compatible virtual flatbed scanner Data Source DLL for testing,
+development, and scanner-application integration work.  It reads images from a
+local folder, exposes them as scanner acquisitions, supports a lightweight
+settings UI, and can transfer images through TWAIN native or file-transfer
+modes.
 
 <details>
-<summary>中文 / Click for Chinese</summary>
+<summary>中文说明 / Chinese</summary>
 
 ## 简介
 
-BN Tech Virtual Scanner 是一个最小化的 TWAIN 2.5 虚拟平板扫描仪 Data Source DLL，
-专为测试和开发场景设计。使用最少的能力集即可被标准 TWAIN 应用程序（Twack32、
-Windows 传真和扫描）识别并使用。
+BN Tech Virtual Scanner 是一个 TWAIN 2.5 虚拟平板扫描仪 Data Source DLL，
+专为测试、开发和扫描应用集成场景设计。它会从本地图片目录读取图片，模拟真实扫描仪
+逐张输出，并支持扫描时设置界面、Native Transfer 和 File Transfer。
 
 核心功能：
 
-- 模拟平板扫描仪，不支持 ADF / 双面扫描
-- 从 `%APPDATA%\bntech\images` 目录读取图片，按字母序轮转
-- 仅支持原生传输（Native Transfer），以 DIB 格式输出图像数据
-- 无设置界面，`ShowUI=TRUE` 被接受但不弹出对话框
-- 同时构建 32 位和 64 位 DLL
-- 使用 FreeImage 库加载图像并进行像素类型转换
-- 扫描索引持久化到 `info.json`，跨 DLL 卸载保持进度
+- 模拟平板扫描仪，不支持 ADF / 双面扫描。
+- 从 `%APPDATA%\bntech\images` 目录读取图片，按字母序轮转。
+- 当图片目录为空时，回退使用安装目录中的 `TWAIN_logo.png`。
+- 支持 Native Transfer，向应用返回 DIB 图像数据。
+- 支持 File Transfer，输出 PNG、JPG、BMP、TIFF。
+- 支持 `ShowUI=TRUE` 时弹出网页 settings UI。
+- settings UI 可选择颜色模式、DPI、传输模式、文件格式、输出目录和文件名。
+- 使用 FreeImage 加载图片、转换像素格式、缩放分辨率。
+- 扫描索引持久化到 `%APPDATA%\bntech\images\info.json`，跨 DLL 卸载保持进度。
+- 输出文件和 Native Transfer 图像信息都会携带用户选择的 DPI。
+- 同时构建 32 位和 64 位 TWAIN DS。
+
+## 使用方式
+
+### 准备测试图片
+
+将测试图片放入：
+
+```text
+%APPDATA%\bntech\images\
+```
+
+支持格式：PNG、JPG、JPEG、BMP、TIF、TIFF。
+
+文件按字母序排列，每次扫描自动前进到下一张。需要重置扫描顺序时，删除：
+
+```text
+%APPDATA%\bntech\images\info.json
+```
+
+### 在扫描应用中使用
+
+在支持 TWAIN 的应用中选择：
+
+```text
+BN Tech Virtual Scanner
+```
+
+如果应用请求显示 UI，会打开本地网页 settings UI。点击 **Scan** 后开始扫描。
+
+在 XnView 的“扫描到...”流程中：
+
+1. 在 XnView 的扫描到窗口中选择输出目录、文件名模式和文件格式。
+2. 点击扫描。
+3. 在弹出的 BN Tech settings UI 中选择颜色模式和 DPI，例如 600 DPI。
+4. 点击 Scan。
+5. XnView 生成的文件应保留用户选择的水平/垂直分辨率。
+
+## DPI 元数据
+
+项目会尽量确保扫描输出文件在 Windows 资源管理器“属性 → 详细信息”中显示正确的
+水平分辨率和垂直分辨率。
+
+已支持：
+
+- PNG：写入或替换 `pHYs` chunk。
+- JPG：写入或替换 JFIF APP0 density，单位为 dots per inch。
+- BMP：写入 DIB header 的 `biXPelsPerMeter` / `biYPelsPerMeter`。
+- TIFF：写入 `XResolution`、`YResolution`、`ResolutionUnit`。
+- Native Transfer：`TW_IMAGEINFO.XResolution` / `YResolution` 使用 settings UI 中选择的 DPI。
+- TWAIN 单位：声明 `ICAP_UNITS = TWUN_INCHES`，表示分辨率单位为 DPI/PPI。
+
+注意：PNG 和 BMP 文件格式内部使用 pixels-per-meter 表示物理分辨率，代码会从 DPI
+转换到 pixels-per-meter；Windows 会再换算并显示为 DPI。
 
 ## 支持的能力
 
-仅注册 8 个能力 — 平板扫描仪兼容所需的最小集：
-
 | 能力 | 类型 | 容器 | 操作 | 默认值 | 可选值 |
 |---|---|---|---|---|---|
-| `CAP_SUPPORTEDCAPS` | UINT16 | ARRAY | GET | — | 其他 7 个能力 |
-| `ICAP_XFERMECH` | UINT16 | ONEVALUE | 全部 | TWSX_NATIVE | TWSX_NATIVE |
-| `ICAP_PIXELTYPE` | UINT16 | ENUMERATION | 全部 | TWPT_RGB | BW, GRAY, RGB |
-| `ICAP_XRESOLUTION` | FIX32 | ENUMERATION | 全部 | 300 | 150, 200, 300, 600 |
-| `ICAP_YRESOLUTION` | FIX32 | ENUMERATION | 全部 | 300 | 150, 200, 300, 600 |
-| `CAP_FEEDERENABLED` | BOOL | ONEVALUE | GET | FALSE | FALSE |
-| `ICAP_PIXELFLAVOR` | UINT16 | ONEVALUE | 全部 | TWPF_CHOCOLATE | TWPF_CHOCOLATE |
-| `CAP_UICONTROLLABLE` | BOOL | ONEVALUE | GET | TRUE | TRUE |
+| `CAP_SUPPORTEDCAPS` | UINT16 | ARRAY | GET | — | 其他能力 |
+| `ICAP_XFERMECH` | UINT16 | ONEVALUE | 全部 | `TWSX_NATIVE` | `TWSX_NATIVE`, `TWSX_FILE` |
+| `ICAP_PIXELTYPE` | UINT16 | ENUMERATION | 全部 | `TWPT_RGB` | `TWPT_BW`, `TWPT_GRAY`, `TWPT_RGB` |
+| `ICAP_XRESOLUTION` | FIX32 | ENUMERATION | 全部 | `300` | `150`, `200`, `300`, `600` |
+| `ICAP_YRESOLUTION` | FIX32 | ENUMERATION | 全部 | `300` | `150`, `200`, `300`, `600` |
+| `ICAP_UNITS` | UINT16 | ONEVALUE | 全部 | `TWUN_INCHES` | `TWUN_INCHES` |
+| `CAP_FEEDERENABLED` | BOOL | ONEVALUE | GET | `FALSE` | `FALSE` |
+| `ICAP_PIXELFLAVOR` | UINT16 | ONEVALUE | 全部 | `TWPF_CHOCOLATE` | `TWPF_CHOCOLATE` |
+| `ICAP_IMAGEFILEFORMAT` | UINT16 | ENUMERATION | 全部 | `TWFF_PNG` | `TWFF_TIFF`, `TWFF_BMP`, `TWFF_JFIF`, `TWFF_PNG` |
+| `CAP_UICONTROLLABLE` | BOOL | ONEVALUE | GET | `TRUE` | `TRUE` |
 
-"全部"操作 = GET + GETCURRENT + GETDEFAULT + SET + RESET。
+“全部”操作 = GET + GETCURRENT + GETDEFAULT + SET + RESET。
 
-## 项目结构
-
-```
-src/
-├── capability.h / .cpp      能力协商（8 个能力）
-├── twain_data_source.h/.cpp  DS 状态机、消息路由、原生传输、
-│                             DIB 构建、内联 DSM 接口
-├── ds_entry.cpp              DLL 入口（DS_Entry + DllMain）
-├── virtual_scanner.h / .cpp  图像加载、像素转换、逐行扫描输出
-├── unit_convert.h / .cpp     TWAIN 单位系统和 FIX32 工具函数
-├── platform.h                Windows 平台宏（/FI 强制包含）
-├── resource.h                资源 ID
-├── modules.md                模块说明文档
-└── core.md                   编码规范
-```
-
-DSM 接口（TWAIN_32.dll 加载、事件通知、内存管理）直接内联到
-`twain_data_source.cpp` 中，作为文件作用域的静态函数 — 无独立模块。
-
-## 编译构建
+## 编译和安装
 
 ### 环境要求
 
@@ -65,182 +109,243 @@ DSM 接口（TWAIN_32.dll 加载、事件通知、内存管理）直接内联到
 - Visual Studio 2022（含 C++ 桌面开发工作负载）
 - FreeImage 库（已包含在 `pub/external` 中）
 
-### 快速构建
+### 推荐命令
+
+不带参数运行会构建 win32 + win64，并安装到 Windows TWAIN 目录：
 
 ```batch
-build.bat win32
-build.bat win64
+build.bat
 ```
 
-### 手动构建
+安装到 `C:\Windows` 需要管理员权限。脚本会检查权限并在需要时请求提权。
+
+常用参数：
 
 ```batch
-mkdir build\win32 && cd build\win32
-cmake ..\.. -G "Ninja"
-cmake --build .
-
-mkdir build\win64 && cd build\win64
-cmake ..\.. -G "Ninja"
-cmake --build .
+build.bat win32       rem 只构建 32 位，不安装
+build.bat win64       rem 只构建 64 位，不安装
+build.bat install     rem 只安装已有构建产物
+build.bat clean       rem 清理 build\win32 和 build\win64
+build.bat debug       rem Debug 构建，默认仍为 Release
 ```
 
-## 安装
+安装目录：
 
-DS 驱动需要安装到 TWAIN 系统目录：
+- 32 位：`C:\Windows\twain_32\bntech\`
+- 64 位：`C:\Windows\twain_64\bntech\`
 
-- **32 位**: `C:\Windows\twain_32\bntech\`
-- **64 位**: `C:\Windows\twain_64\bntech\`
+安装文件包括：
 
-从构建输出目录复制以下文件：
 1. `bntech_virtual_scanner.ds`
 2. `FreeImage.dll`
 3. `TWAIN_logo.png`
 
-或使用 CMake install（需管理员权限）：
-```batch
-cmake --install build\win32 --prefix /
+如果安装时提示 `.ds` 文件被占用，请关闭 XnView、Twack 或其他扫描应用后重试。
+TWAIN DS 本质上是 DLL，被应用加载时无法覆盖。
+
+## 项目结构
+
+```text
+src/
+├── capability.h / .cpp        TWAIN 能力协商。
+├── twain_data_source.h/.cpp   DS 状态机、消息路由、Native/File Transfer、DIB 构建。
+├── settings_server.h/.cpp     本地网页 settings UI 和 HTTP server。
+├── ds_entry.cpp               DLL 入口，导出 DS_Entry。
+├── virtual_scanner.h/.cpp     图片加载、DPI 缩放、像素转换、DPI 元数据写入。
+├── unit_convert.h/.cpp        TWAIN FIX32 转换工具。
+├── platform.h                 Windows 平台宏，CMake 使用 /FI 强制包含。
+└── resource.h                 资源 ID。
 ```
 
-## 图片源设置
-
-将测试图片放入：`%APPDATA%\bntech\images\`
-
-支持的格式：PNG、JPG、JPEG、BMP、TIF、TIFF。文件按字母序排列，
-每次 acquire 操作自动轮转到下一张。
-
-如需重置扫描顺序，删除 `%APPDATA%\bntech\images\info.json`。
-
-## 代码风格
-
-项目遵循 [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html)：
-- `//` 行注释，句首大写，句末带句号
-- 每条语句独占一行，禁止多语句压缩
-- 正确的缩进、空格和大括号位置
-- 变量使用 `snake_case`，类/函数使用 `CamelCase`
-- 禁用 `using namespace std`，优先使用 `static_cast` 替代 C 风格转换
+更多变更记录见 [`CHANGELOG.md`](CHANGELOG.md)。
 
 </details>
 
-A minimal TWAIN 2.5 compatible virtual flatbed scanner Data Source DLL
-for testing and development.  Designed to be recognized by standard TWAIN
-applications (Twack32, Windows Fax and Scan) with the fewest possible
-capabilities.
-
 ## Features
 
-- **Flatbed scanner emulation**: Presents as a basic flatbed scanner with
-  no ADF/duplex support.
-- **Image source**: Reads images from `%APPDATA%\bntech\images`, sorted
-  alphabetically.  Each acquire advances to the next image; wraps around
-  when all are exhausted.
-- **Default image**: Falls back to `TWAIN_logo.png` from the DS install
-  directory when the images directory is empty.
-- **Native transfer only**: Provides DIB-format image data via
-  DAT_IMAGENATIVEXFER (the minimal transfer mechanism accepted by
-  most applications).
-- **No UI**: `ShowUI=TRUE` is accepted but no settings dialog is shown;
-  the DS always scans with the currently negotiated capabilities.
-- **Dual architecture**: Builds both 32-bit and 64-bit DS DLLs.
-- **FreeImage**: Uses the FreeImage library for image loading and pixel
-  type conversion (BW threshold, grayscale, color with R/B swap).
-- **Index persistence**: Stores the next-image index in `info.json`
-  under the images directory so that scan progress survives DLL unloads.
+- **Virtual flatbed scanner**: Presents as a basic TWAIN flatbed scanner with
+  no ADF or duplex support.
+- **Folder-backed image source**: Reads images from `%APPDATA%\bntech\images`,
+  sorted alphabetically, and advances on each acquisition.
+- **Default fallback image**: Uses `TWAIN_logo.png` from the installation
+  directory when the image folder is empty.
+- **Settings UI**: Shows a lightweight local web UI when the application sets
+  `ShowUI=TRUE`.
+- **Scan-time options**: Supports color mode, DPI, transfer mode, file format,
+  output directory, and output filename.
+- **Native transfer**: Returns DIB image data through `DAT_IMAGENATIVEXFER`.
+- **File transfer**: Supports `DAT_SETUPFILEXFER` / `DAT_IMAGEFILEXFER` for
+  PNG, JPG, BMP, and TIFF output.
+- **DPI metadata**: Writes horizontal and vertical resolution metadata so
+  Windows Explorer and image applications can see the selected DPI.
+- **Image conversion**: Uses FreeImage for loading, DPI-based scaling, BW,
+  grayscale, and RGB conversion.
+- **Index persistence**: Stores the next-image index in
+  `%APPDATA%\bntech\images\info.json`.
+- **Dual architecture**: Builds and installs both 32-bit and 64-bit TWAIN data
+  sources.
 
-## Supported Capabilities
+## Usage
 
-Only 8 capabilities are registered — the minimum required for flatbed
-compatibility:
+### Image source folder
+
+Place test images in:
+
+```text
+%APPDATA%\bntech\images\
+```
+
+Supported input formats: PNG, JPG, JPEG, BMP, TIF, TIFF.
+
+Images are sorted alphabetically.  Each scan advances to the next image.  To
+reset the order, delete:
+
+```text
+%APPDATA%\bntech\images\info.json
+```
+
+### In a TWAIN application
+
+Select the source named:
+
+```text
+BN Tech Virtual Scanner
+```
+
+If the application requests UI, the data source opens a local browser-based
+settings page.  Press **Scan** to continue the acquisition.
+
+For XnView "Scan to...":
+
+1. Choose output directory, filename pattern, and output format in XnView.
+2. Click Scan.
+3. In the BN Tech settings UI, select the desired DPI, for example 600 DPI.
+4. Click Scan.
+5. The generated file should retain the selected horizontal and vertical DPI.
+
+## DPI metadata behavior
+
+The scanner writes or propagates DPI metadata for both direct TWAIN file
+transfer and native-transfer workflows where the application saves the final
+file.
+
+Supported output metadata:
+
+- PNG: `pHYs` chunk.
+- JPG: JFIF APP0 density fields with dots-per-inch units.
+- BMP: DIB header `biXPelsPerMeter` and `biYPelsPerMeter`.
+- TIFF: `XResolution`, `YResolution`, and `ResolutionUnit` tags.
+- Native transfer: `TW_IMAGEINFO.XResolution` and `YResolution` report the DPI
+  selected in the settings UI.
+- TWAIN units: `ICAP_UNITS = TWUN_INCHES`.
+
+PNG and BMP store their physical resolution internally as pixels per meter; the
+scanner converts from DPI to pixels per meter, and Windows converts it back for
+Explorer's Details tab.
+
+## Supported capabilities
 
 | Capability | Type | Container | Ops | Default | Values |
 |---|---|---|---|---|---|
-| `CAP_SUPPORTEDCAPS` | UINT16 | ARRAY | GET | — | The other 7 caps |
-| `ICAP_XFERMECH` | UINT16 | ONEVALUE | All | TWSX_NATIVE | TWSX_NATIVE |
-| `ICAP_PIXELTYPE` | UINT16 | ENUMERATION | All | TWPT_RGB | BW, GRAY, RGB |
-| `ICAP_XRESOLUTION` | FIX32 | ENUMERATION | All | 300 | 150, 200, 300, 600 |
-| `ICAP_YRESOLUTION` | FIX32 | ENUMERATION | All | 300 | 150, 200, 300, 600 |
-| `CAP_FEEDERENABLED` | BOOL | ONEVALUE | GET | FALSE | FALSE |
-| `ICAP_PIXELFLAVOR` | UINT16 | ONEVALUE | All | TWPF_CHOCOLATE | TWPF_CHOCOLATE |
-| `CAP_UICONTROLLABLE` | BOOL | ONEVALUE | GET | TRUE | TRUE |
+| `CAP_SUPPORTEDCAPS` | UINT16 | ARRAY | GET | — | Other supported capabilities |
+| `ICAP_XFERMECH` | UINT16 | ONEVALUE | All | `TWSX_NATIVE` | `TWSX_NATIVE`, `TWSX_FILE` |
+| `ICAP_PIXELTYPE` | UINT16 | ENUMERATION | All | `TWPT_RGB` | `TWPT_BW`, `TWPT_GRAY`, `TWPT_RGB` |
+| `ICAP_XRESOLUTION` | FIX32 | ENUMERATION | All | `300` | `150`, `200`, `300`, `600` |
+| `ICAP_YRESOLUTION` | FIX32 | ENUMERATION | All | `300` | `150`, `200`, `300`, `600` |
+| `ICAP_UNITS` | UINT16 | ONEVALUE | All | `TWUN_INCHES` | `TWUN_INCHES` |
+| `CAP_FEEDERENABLED` | BOOL | ONEVALUE | GET | `FALSE` | `FALSE` |
+| `ICAP_PIXELFLAVOR` | UINT16 | ONEVALUE | All | `TWPF_CHOCOLATE` | `TWPF_CHOCOLATE` |
+| `ICAP_IMAGEFILEFORMAT` | UINT16 | ENUMERATION | All | `TWFF_PNG` | `TWFF_TIFF`, `TWFF_BMP`, `TWFF_JFIF`, `TWFF_PNG` |
+| `CAP_UICONTROLLABLE` | BOOL | ONEVALUE | GET | `TRUE` | `TRUE` |
 
 "All" operations = GET + GETCURRENT + GETDEFAULT + SET + RESET.
 
-## Architecture
-
-```
-src/
-├── capability.h / .cpp      Capability negotiation (8 caps)
-├── twain_data_source.h/.cpp  DS state machine, message routing,
-│                             native transfer, DIB construction,
-│                             inlined DSM interface
-├── ds_entry.cpp              DLL entry point (DS_Entry + DllMain)
-├── virtual_scanner.h / .cpp  Image loading, pixel conversion,
-│                             strip-based scan output
-├── unit_convert.h / .cpp     TWAIN unit system and FIX32 utilities
-├── platform.h                Windows platform macros (/FI included)
-├── resource.h                Resource IDs
-├── modules.md                Module descriptions
-└── core.md                   Coding style rules
-```
-
-The DSM interface (TWAIN_32.dll loading, event signalling, memory
-management) is inlined directly into `twain_data_source.cpp` as
-file-scope static functions — no separate module.
-
-## Building
+## Building and installation
 
 ### Prerequisites
+
 - CMake 3.15+
-- Visual Studio 2022 with C++ desktop development workload
-- FreeImage library (included in `pub/external`)
+- Visual Studio 2022 with the C++ desktop development workload.
+- FreeImage library, included under `pub/external`.
 
-### Quick Build
+### Recommended command
+
+Run without arguments to build win32 + win64 and install both data sources:
+
 ```batch
-build.bat win32
-build.bat win64
+build.bat
 ```
 
-### Manual Build
-```batch
-mkdir build\win32 && cd build\win32
-cmake ..\.. -G "Ninja"
-cmake --build .
+Installing to `C:\Windows` requires administrator privileges.  The script checks
+for elevation and requests it when needed.
 
-mkdir build\win64 && cd build\win64
-cmake ..\.. -G "Ninja"
-cmake --build .
+Common commands:
+
+```batch
+build.bat win32       rem Build 32-bit only; do not install.
+build.bat win64       rem Build 64-bit only; do not install.
+build.bat install     rem Install existing build outputs only.
+build.bat clean       rem Remove build\win32 and build\win64.
+build.bat debug       rem Debug build; Release is the default.
 ```
 
-## Installation
-
-The DS must be installed to the TWAIN system directory:
+The TWAIN data source is installed to:
 
 - **32-bit**: `C:\Windows\twain_32\bntech\`
 - **64-bit**: `C:\Windows\twain_64\bntech\`
 
-Copy the following files from the build output:
+Installed files:
+
 1. `bntech_virtual_scanner.ds`
 2. `FreeImage.dll`
 3. `TWAIN_logo.png`
 
-Or use CMake install (requires admin privileges):
+If installation fails because the `.ds` file is in use, close XnView, Twack, or
+any other scanning application and run the install again.  A TWAIN `.ds` file is
+a DLL and cannot be overwritten while loaded.
+
+### Manual CMake build
+
 ```batch
-cmake --install build\win32 --prefix /
+cmake -S . -B build\win32 -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build\win32
+cmake --install build\win32 --prefix C:/Windows
+
+cmake -S . -B build\win64 -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build\win64
+cmake --install build\win64 --prefix C:/Windows
 ```
 
-## Image Source Setup
+## Architecture
 
-Place test images in: `%APPDATA%\bntech\images\`
+```text
+src/
+├── capability.h / .cpp        TWAIN capability negotiation.
+├── twain_data_source.h/.cpp   DS state machine, message routing,
+│                               native/file transfer, and DIB construction.
+├── settings_server.h/.cpp     Local web settings UI and HTTP server.
+├── ds_entry.cpp               DLL entry point and exported DS_Entry.
+├── virtual_scanner.h/.cpp     Image loading, DPI scaling, pixel conversion,
+│                               strip output, and DPI metadata patching.
+├── unit_convert.h/.cpp        TWAIN FIX32 conversion helpers.
+├── platform.h                 Windows platform macros, force-included by CMake.
+└── resource.h                 Resource IDs.
+```
 
-Supported formats: PNG, JPG, JPEG, BMP, TIF, TIFF.  Files are sorted
-alphabetically and cycled through on each acquire operation.
+The DSM interface helpers for loading `TWAIN_32.dll`, memory management, and
+application event notification are implemented as file-scope functions in
+`twain_data_source.cpp`.
 
-To reset the scan order, delete `%APPDATA%\bntech\images\info.json`.
+## Changelog
 
-## Code Style
+See [`CHANGELOG.md`](CHANGELOG.md) for notable changes.
 
-Project follows [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html):
-- `//` line comments with sentence capitalization and periods.
-- One statement per line; no multi-statement compression.
-- Proper indentation, spacing, and brace placement.
-- `snake_case` for variables, `CamelCase` for classes/functions.
-- No `using namespace std`.  Prefer `static_cast` over C-style casts.
+## Code style
+
+The project follows [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html):
+
+- Use `//` line comments with sentence capitalization and periods.
+- Keep one statement per line; avoid multi-statement compression.
+- Use proper indentation, spacing, and brace placement.
+- Use `snake_case` for variables and `CamelCase` for classes/functions.
+- Do not use `using namespace std`; prefer `static_cast` over C-style casts.
