@@ -16,7 +16,7 @@ else()
 endif()
 add_library(${PROJECT_NAME} SHARED
     src/capability.cpp src/ds_entry.cpp
-    src/settings_server.cpp src/twain_data_source.cpp
+    src/localization.cpp src/settings_server.cpp src/twain_data_source.cpp
     src/unit_convert.cpp src/virtual_scanner.cpp
     res/twain_ds.rc)
 target_include_directories(${PROJECT_NAME} PRIVATE src pub/external/include pub/external/FreeImage/${ARCH_DIR})

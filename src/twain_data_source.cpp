@@ -5,6 +5,7 @@
 #include "twain_data_source.h"
 #include "unit_convert.h"
 #include "settings_server.h"
+#include "localization.h"
 #include <windows.h>
 #include <cstring>
 #include <algorithm>
@@ -153,6 +154,15 @@ TwainDataSource::~TwainDataSource() {
 TW_INT16 TwainDataSource::initialize() {
   caps_.initialize();
   identity_ = s_the_identity;
+  const auto& text = localization::strings();
+  if (localization::currentLanguage() == localization::Language::kZhCn) {
+    identity_.Version.Language = TWLG_CHINESE_PRC;
+    identity_.Version.Country = TWCY_CHINA;
+  }
+  std::strncpy(identity_.ProductFamily, text.product_family,
+               sizeof(identity_.ProductFamily) - 1);
+  std::strncpy(identity_.ProductName, text.product_name,
+               sizeof(identity_.ProductName) - 1);
   return TWRC_SUCCESS;
 }
 // Central dispatch for all TWAIN (DG, DAT, MSG) triples.
