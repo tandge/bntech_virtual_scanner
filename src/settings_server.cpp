@@ -1,4 +1,5 @@
 #include "settings_server.h"
+#include "localization.h"
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -44,12 +45,13 @@ int SettingsServer::findFreePort() const {
   return port;
 }
 std::string SettingsServer::buildHtmlPage(int port) const {
+  const auto& text = localization::strings();
   auto sel = [](int v, int cur) { return v == cur ? " selected" : ""; };
   std::string out_dir = result_.output_dir[0]
       ? std::string(result_.output_dir) : default_output_dir_;
   std::ostringstream html;
   html << "<!DOCTYPE html>\n<html><head><meta charset='utf-8'>\n";
-  html << "<title>BN Tech Virtual Scanner</title>\n";
+  html << "<title>" << text.app_title << "</title>\n";
   html << "<style>\n";
   html << "body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#f5f5f5;}\n";
   html << "h1{color:#333;font-size:18px;}\n";
@@ -64,51 +66,51 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << ".scan{background:#0078d7;color:#fff;}\n";
   html << ".cancel{background:#ccc;color:#333;}\n";
   html << "</style></head><body>\n";
-  html << "<h1>BN Tech Virtual Scanner <span style='font-size:11px;color:#999;'>[" << __DATE__ << " " << __TIME__ << "]</span></h1>\n";
-  html << "<div class='group'><h2>Scan Settings</h2>\n";
-  html << "<label>Color Mode:</label>\n";
+  html << "<h1>" << text.app_title << " <span style='font-size:11px;color:#999;'>[" << __DATE__ << " " << __TIME__ << "]</span></h1>\n";
+  html << "<div class='group'><h2>" << text.scan_settings << "</h2>\n";
+  html << "<label>" << text.color_mode << "</label>\n";
   html << "<select id='pixeltype' name='pixeltype'>\n";
-  html << "<option value='0'" << sel(0, result_.pixel_type) << ">Black and White</option>\n";
-  html << "<option value='1'" << sel(1, result_.pixel_type) << ">Grayscale</option>\n";
-  html << "<option value='2'" << sel(2, result_.pixel_type) << ">Color</option>\n";
+  html << "<option value='0'" << sel(0, result_.pixel_type) << ">" << text.black_and_white << "</option>\n";
+  html << "<option value='1'" << sel(1, result_.pixel_type) << ">" << text.grayscale << "</option>\n";
+  html << "<option value='2'" << sel(2, result_.pixel_type) << ">" << text.color << "</option>\n";
   html << "</select><br>\n";
-  html << "<label>Resolution (DPI):</label>\n";
+  html << "<label>" << text.resolution_dpi << "</label>\n";
   html << "<select id='resolution' name='resolution'>\n";
   html << "<option value='150'" << sel(150, result_.resolution) << ">150</option>\n";
   html << "<option value='200'" << sel(200, result_.resolution) << ">200</option>\n";
   html << "<option value='300'" << sel(300, result_.resolution) << ">300</option>\n";
   html << "<option value='600'" << sel(600, result_.resolution) << ">600</option>\n";
   html << "</select><br>\n";
-  html << "<label>Page Size:</label>\n";
+  html << "<label>" << text.page_size << "</label>\n";
   html << "<select id='pagesize' name='pagesize'>\n";
   html << "<option value='0'" << sel(0, result_.page_size) << ">US Letter (8.5 x 11 in)</option>\n";
   html << "<option value='1'" << sel(1, result_.page_size) << ">US Legal (8.5 x 14 in)</option>\n";
   html << "<option value='2'" << sel(2, result_.page_size) << ">A4 (210 x 297 mm)</option>\n";
   html << "<option value='3'" << sel(3, result_.page_size) << ">A5 (148 x 210 mm)</option>\n";
   html << "</select><br>\n";
-  html << "<label>Page Fill:</label>\n";
+  html << "<label>" << text.page_fill << "</label>\n";
   html << "<select id='pagefillmode' name='pagefillmode'>\n";
-  html << "<option value='0'" << sel(0, result_.page_fill_mode) << ">Stretch</option>\n";
-  html << "<option value='1'" << sel(1, result_.page_fill_mode) << ">Fit with padding</option>\n";
-  html << "<option value='2'" << sel(2, result_.page_fill_mode) << ">Fill and crop</option>\n";
+  html << "<option value='0'" << sel(0, result_.page_fill_mode) << ">" << text.stretch << "</option>\n";
+  html << "<option value='1'" << sel(1, result_.page_fill_mode) << ">" << text.fit_with_padding << "</option>\n";
+  html << "<option value='2'" << sel(2, result_.page_fill_mode) << ">" << text.fill_and_crop << "</option>\n";
   html << "</select><br>\n";
   html << "</div>\n";
   if (result_.app_managed_file_output) {
     // Application has already chosen File-transfer mode and will supply the
     // destination path via DAT_SETUPFILEXFER.  Hide all file-output controls
     // so the user only edits scan settings (color, resolution).
-    html << "<div class='group'><h2>Output Settings</h2>\n";
-    html << "<p style='color:#666;margin:4px 0;'>File transfer mode (application-managed).</p>\n";
+    html << "<div class='group'><h2>" << text.output_settings << "</h2>\n";
+    html << "<p style='color:#666;margin:4px 0;'>" << text.app_managed_file_output << "</p>\n";
     html << "</div>\n";
   } else {
-    html << "<div class='group'><h2>Output Settings</h2>\n";
-    html << "<label>Transfer Mode:</label>\n";
+    html << "<div class='group'><h2>" << text.output_settings << "</h2>\n";
+    html << "<label>" << text.transfer_mode << "</label>\n";
     html << "<select id='transfermode' name='transfermode' onchange='updateMode()'>\n";
-    html << "<option value='0'" << sel(0, result_.transfer_mode) << ">Native (Memory)</option>\n";
-    html << "<option value='1'" << sel(1, result_.transfer_mode) << ">File</option>\n";
+    html << "<option value='0'" << sel(0, result_.transfer_mode) << ">" << text.native_memory << "</option>\n";
+    html << "<option value='1'" << sel(1, result_.transfer_mode) << ">" << text.file << "</option>\n";
     html << "</select><br>\n";
     html << "<div id='row_format'>\n";
-    html << "<label>File Format:</label>\n";
+    html << "<label>" << text.file_format << "</label>\n";
     html << "<select id='fileformat' name='fileformat'>\n";
     html << "<option value='0'" << sel(0, result_.file_format) << ">PNG</option>\n";
     html << "<option value='1'" << sel(1, result_.file_format) << ">JPG</option>\n";
@@ -117,18 +119,18 @@ std::string SettingsServer::buildHtmlPage(int port) const {
     html << "</select><br>\n";
     html << "</div>\n";
     html << "<div id='row_output'>\n";
-    html << "<label>Output Directory:</label>\n";
+    html << "<label>" << text.output_directory << "</label>\n";
     html << "<input type='text' id='outputdir' name='outputdir' style='width:240px;' value='" << out_dir << "'>\n";
-    html << "<button onclick='browseDir()' style='padding:4px 10px;margin-left:4px;'>Browse...</button><br>\n";
-    html << "<label>Output Filename:</label>\n";
+    html << "<button onclick='browseDir()' style='padding:4px 10px;margin-left:4px;'>" << text.browse << "</button><br>\n";
+    html << "<label>" << text.output_filename << "</label>\n";
     html << "<input type='text' id='outputfilename' name='outputfilename' style='width:240px;' value='" << result_.output_filename << "'>\n";
     html << "<span id='outputext' style='color:#666;margin-left:4px;'></span><br>\n";
     html << "</div>\n";
     html << "</div>\n";
   }
   html << "<div class='buttons'>\n";
-  html << "<button class='cancel' onclick='doCancel()'>Cancel</button>\n";
-  html << "<button class='scan' onclick='doScan()'>Scan</button>\n";
+  html << "<button class='cancel' onclick='doCancel()'>" << text.cancel << "</button>\n";
+  html << "<button class='scan' onclick='doScan()'>" << text.scan << "</button>\n";
   html << "</div>\n";
   html << "<script>\n";
   html << "var EXTS=['.png','.jpg','.bmp','.tif'];\n";
@@ -244,9 +246,10 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
       send(client, response.c_str(), static_cast<int>(response.size()), 0);
       closesocket(client);
     } else if (request.find("GET /browse") != std::string::npos) {
-      char folder[MAX_PATH] = {};
-      BROWSEINFOA bi = {};
-      bi.lpszTitle = "Select Output Directory";
+      wchar_t folder[MAX_PATH] = {};
+      BROWSEINFOW bi = {};
+      std::wstring browse_title = localization::toWide(localization::strings().select_output_directory);
+      bi.lpszTitle = browse_title.c_str();
       bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
       // Bring the folder picker to the foreground and center it on screen
       // so it is not hidden behind the browser window that opened it.
@@ -269,14 +272,19 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
         }
         return 0;
       };
-      LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
+      LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
       if (pidl) {
-        SHGetPathFromIDListA(pidl, folder);
+        SHGetPathFromIDListW(pidl, folder);
         CoTaskMemFree(pidl);
       }
+      char folder_utf8[MAX_PATH * 4] = {};
+      if (folder[0]) {
+        WideCharToMultiByte(CP_UTF8, 0, folder, -1, folder_utf8,
+                            sizeof(folder_utf8), nullptr, nullptr);
+      }
       std::string resp = "HTTP/1.1 200 OK\r\n"
-                         "Content-Type: text/plain\r\n"
-                         "Connection: close\r\n\r\n" + std::string(folder);
+                         "Content-Type: text/plain; charset=utf-8\r\n"
+                         "Connection: close\r\n\r\n" + std::string(folder_utf8);
       send(client, resp.c_str(), static_cast<int>(resp.size()), 0);
       closesocket(client);
     } else if (request.find("GET /submit?") != std::string::npos ||
@@ -289,12 +297,13 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
           self->parseFormData(query);
         }
       }
+      const auto& text = localization::strings();
       std::string body =
-          "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-          "<title>BN Tech Virtual Scanner</title></head><body "
-          "style='font-family:Segoe UI,Arial;text-align:center;margin-top:60px;'>"
-          "<h2>Request received</h2>"
-          "<p>You may close this browser tab now.</p></body></html>";
+          std::string("<!DOCTYPE html><html><head><meta charset='utf-8'>") +
+          "<title>" + text.app_title + "</title></head><body " +
+          "style='font-family:Segoe UI,Arial;text-align:center;margin-top:60px;'>" +
+          "<h2>" + text.request_received + "</h2>" +
+          "<p>" + text.close_tab_now + "</p></body></html>";
       std::string response = "HTTP/1.1 200 OK\r\n"
                              "Content-Type: text/html; charset=utf-8\r\n"
                              "Connection: close\r\n\r\n" + body;

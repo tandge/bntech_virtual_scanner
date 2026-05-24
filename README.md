@@ -26,6 +26,7 @@ BN Tech Virtual Scanner 是一个 TWAIN 2.5 虚拟平板扫描仪 Data Source DL
 - 支持 File Transfer，输出 PNG、JPG、BMP、TIFF。
 - 支持 `ShowUI=TRUE` 时弹出网页 settings UI。
 - settings UI 可选择颜色模式、DPI、传输模式、文件格式、输出目录和文件名。
+- 支持通过 `%APPDATA%\bntech\config.ini` 切换界面语言：`en_US` / `zh_CN`，默认 `en_US`。
 - 使用 FreeImage 加载图片、转换像素格式、缩放分辨率。
 - 扫描索引持久化到 `%APPDATA%\bntech\images\info.json`，跨 DLL 卸载保持进度。
 - 输出文件和 Native Transfer 图像信息都会携带用户选择的 DPI。
@@ -58,6 +59,16 @@ BN Tech Virtual Scanner
 ```
 
 如果应用请求显示 UI，会打开本地网页 settings UI。点击 **Scan** 后开始扫描。
+
+### 切换界面语言
+
+界面语言从 `%APPDATA%\bntech\config.ini` 读取，未配置时默认使用 `en_US`：
+
+```ini
+language=zh_CN
+```
+
+可用值：`en_US`、`zh_CN`（也兼容 `lang` / `locale` 键名）。
 
 在 XnView 的“扫描到...”流程中：
 
@@ -171,6 +182,8 @@ src/
   directory when the image folder is empty.
 - **Settings UI**: Shows a lightweight local web UI when the application sets
   `ShowUI=TRUE`.
+- **Localization**: Supports `en_US` and `zh_CN` UI strings via
+  `%APPDATA%\bntech\config.ini`; defaults to `en_US`.
 - **Scan-time options**: Supports color mode, DPI, transfer mode, file format,
   output directory, and output filename.
 - **Native transfer**: Returns DIB image data through `DAT_IMAGENATIVEXFER`.
@@ -214,6 +227,18 @@ BN Tech Virtual Scanner
 
 If the application requests UI, the data source opens a local browser-based
 settings page.  Press **Scan** to continue the acquisition.
+
+### UI language
+
+The data source reads the UI language from `%APPDATA%\bntech\config.ini`.  If the
+file or setting is missing, it defaults to `en_US`:
+
+```ini
+language=zh_CN
+```
+
+Supported values: `en_US`, `zh_CN` (`lang` and `locale` are accepted as aliases
+for the key name).
 
 For XnView "Scan to...":
 
