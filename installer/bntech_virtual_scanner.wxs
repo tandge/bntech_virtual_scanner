@@ -1,0 +1,170 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BN Tech Virtual Scanner WiX 4 installer definition.
+
+  Build examples (WiX Toolset 4.0.x):
+
+    REM English MSI (default UI culture en-us)
+    wix build installer\bntech_virtual_scanner.wxs ^
+      -arch x64 ^
+      -d Platform=x64 ^
+      -d SourceDir=build\win64 ^
+      -d AppLanguage=en_US ^
+      -culture en-us ^
+      -ext WixToolset.UI.wixext ^
+      -o build\installer\win64\bntech_virtual_scanner_win64_en_US.msi
+
+    REM Simplified Chinese MSI
+    wix build installer\bntech_virtual_scanner.wxs ^
+      -arch x64 ^
+      -d Platform=x64 ^
+      -d SourceDir=build\win64 ^
+      -d AppLanguage=zh_CN ^
+      -culture zh-cn ^
+      -ext WixToolset.UI.wixext ^
+      -o build\installer\win64\bntech_virtual_scanner_win64_zh_CN.msi
+
+  The MSI installs the same files as build.bat install:
+    - bntech_virtual_scanner.ds
+    - FreeImage.dll
+    - TWAIN_logo.png
+
+  Target directories:
+    - x86: [WindowsFolder]twain_32\bntech
+    - x64: [WindowsFolder]twain_64\bntech
+
+  Language handling:
+    - AppLanguage is a preprocessor variable selected at build time.
+    - Two single-language MSIs are built (en-us + zh-cn), then merged
+      into one multi-language MSI using MsiTran/WiSubStg/WiLangId.
+    - Windows Installer auto-selects the matching UI language at
+      install time. Users can also force a language:
+        msiexec /i xxx.msi TRANSFORMS=:2052   (Simplified Chinese)
+    - If AppLanguage != en_US, the installer writes
+      [AppDataFolder]bntech\config.ini with language=<AppLanguage>.
+    - en_US needs no config.ini because the data source defaults to it.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <?ifndef AppLanguage ?>
+    <?define AppLanguage = "en_US" ?>
+  <?endif?>
+
+  <?if $(var.Platform) = x64 ?>
+    <?define TwainFolder = "twain_64" ?>
+    <?if $(var.AppLanguage) = "zh_CN" ?>
+      <?define ProductName = "BN Tech 虚拟扫描仪 64 位" ?>
+      <?define UpgradeCode = "9D90E1A0-6F77-4D18-9F17-226032BA8D64" ?>
+    <?else?>
+      <?define ProductName = "BN Tech Virtual Scanner 64-bit" ?>
+      <?define UpgradeCode = "9D90E1A0-6F77-4D18-9F17-226032BA8D64" ?>
+    <?endif?>
+  <?else?>
+    <?define TwainFolder = "twain_32" ?>
+    <?if $(var.AppLanguage) = "zh_CN" ?>
+      <?define ProductName = "BN Tech 虚拟扫描仪 32 位" ?>
+      <?define UpgradeCode = "0A3F68E8-5DC4-4D33-81C0-9A6EC8431C32" ?>
+    <?else?>
+      <?define ProductName = "BN Tech Virtual Scanner 32-bit" ?>
+      <?define UpgradeCode = "0A3F68E8-5DC4-4D33-81C0-9A6EC8431C32" ?>
+    <?endif?>
+  <?endif?>
+
+  <Package Name="$(var.ProductName)"
+           Manufacturer="BN Tech"
+           Version="1.0.0.0"
+           UpgradeCode="$(var.UpgradeCode)"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Codepage="65001">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Baked-in language. Used by IniFile, custom actions and message scripts. -->
+    <Property Id="APP_LANGUAGE" Value="$(var.AppLanguage)" />
+    <Property Id="WIXUI_INSTALLDIR" Value="INSTALLFOLDER" />
+
+    <ui:WixUI Id="WixUI_InstallDir" />
+
+    <StandardDirectory Id="WindowsFolder">
+      <Directory Id="TWAINROOT" Name="$(var.TwainFolder)">
+        <Directory Id="INSTALLFOLDER" Name="bntech" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="AppDataFolder">
+      <Directory Id="APPDATABNTECH" Name="bntech" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="BN Tech Virtual Scanner" Level="1">
+      <ComponentGroupRef Id="ScannerFiles" />
+      <ComponentRef Id="BntechAppDataFolder" />
+      <ComponentRef Id="LanguageConfig" />
+    </Feature>
+
+    <CustomAction Id="ShowInstallFailure"
+                  Script="vbscript"
+                  ScriptSourceFile="$(var.ProjectDir)installer\install_failure.vbs"
+                  Execute="rollback"
+                  Return="ignore" />
+
+    <CustomAction Id="ShowUninstallFailure"
+                  Script="vbscript"
+                  ScriptSourceFile="$(var.ProjectDir)installer\uninstall_failure.vbs"
+                  Execute="rollback"
+                  Return="ignore" />
+
+    <InstallExecuteSequence>
+      <Custom Action="ShowInstallFailure" After="InstallInitialize" Condition="NOT Installed" />
+      <Custom Action="ShowUninstallFailure" After="ShowInstallFailure" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
+    </InstallExecuteSequence>
+
+    <ComponentGroup Id="ScannerFiles" Directory="INSTALLFOLDER">
+      <Component Id="DataSourceComponent" Guid="*">
+        <File Id="DataSourceFile"
+              Source="$(var.SourceDir)\bntech_virtual_scanner.ds"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="FreeImageComponent" Guid="*">
+        <File Id="FreeImageFile"
+              Source="$(var.SourceDir)\FreeImage.dll"
+              KeyPath="yes" />
+      </Component>
+      <Component Id="LogoComponent" Guid="*">
+        <File Id="LogoFile"
+              Source="$(var.SourceDir)\TWAIN_logo.png"
+              KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Component Id="BntechAppDataFolder" Directory="APPDATABNTECH" Guid="*">
+      <CreateFolder />
+      <RegistryValue Root="HKCU"
+                     Key="Software\BN Tech\Virtual Scanner"
+                     Name="AppDataFolderCreated"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <Component Id="LanguageConfig" Directory="APPDATABNTECH" Guid="*"
+               Condition="APP_LANGUAGE &lt;&gt; &quot;en_US&quot;">
+      <RegistryValue Root="HKCU"
+                     Key="Software\BN Tech\Virtual Scanner"
+                     Name="LanguageConfig"
+                     Type="string"
+                     Value="[APP_LANGUAGE]"
+                     KeyPath="yes" />
+      <IniFile Id="ConfigIniLanguage"
+               Action="addLine"
+               Directory="APPDATABNTECH"
+               Name="config.ini"
+               Section="Settings"
+               Key="language"
+               Value="[APP_LANGUAGE]" />
+    </Component>
+
+  </Package>
+</Wix>

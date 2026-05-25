@@ -52,3 +52,101 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
 install(TARGETS ${PROJECT_NAME} RUNTIME DESTINATION ${TWAIN_DIR})
 install(FILES ${CMAKE_SOURCE_DIR}/pub/external/FreeImage/${ARCH_DIR}/FreeImage.dll
     ${CMAKE_SOURCE_DIR}/res/TWAIN_logo.png DESTINATION ${TWAIN_DIR})
+
+# WiX 4 MSI package targets.
+#
+# A single multi-language MSI is produced per architecture. The en-us
+# and zh-cn packages are built separately, then merged into one MSI
+# using embedded transforms (MsiTran.exe / WiSubStg.vbs / WiLangId.vbs
+# from the Windows SDK). Windows Installer auto-selects the matching
+# UI language at install time.
+#
+# Usage after configuring the project:
+#   cmake --build . --target msi64
+#   cmake --build . --target msi32
+#
+# The current architecture target depends on bntech_virtual_scanner so the .ds,
+# FreeImage.dll, and TWAIN_logo.png files are up to date before WiX runs.  The
+# opposite architecture target packages the conventional build output directory
+# (build/win32 or build/win64), so build that architecture first when invoking it
+# from a build tree of the other architecture.
+set(WIX_EXECUTABLE "wix" CACHE FILEPATH "Path to WiX Toolset 4 wix executable")
+set(WIX_UI_EXTENSION "WixToolset.UI.wixext" CACHE STRING "WiX UI extension name or full path")
+set(WIX_SOURCE_FILE ${CMAKE_SOURCE_DIR}/installer/bntech_virtual_scanner.wxs)
+set(WIX_INSTALLER_ROOT ${CMAKE_SOURCE_DIR}/build/installer)
+
+# Windows SDK tools needed for multi-language MSI transform embedding.
+# These ship with the Windows SDK (typically under
+# C:\Program Files (x86)\Windows Kits\10\bin\<version>\x86).
+set(WINSDK_BIN "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86"
+    CACHE PATH "Windows SDK Tools bin directory (contains MsiTran.exe, WiSubStg.vbs, WiLangId.vbs)")
+set(MSITRAN "${WINSDK_BIN}/MsiTran.exe")
+set(WISUBSTG "${WINSDK_BIN}/WiSubStg.vbs")
+set(WILANGID "${WINSDK_BIN}/WiLangId.vbs")
+
+if(ARCH_DIR STREQUAL "win64")
+    set(MSI64_SOURCE_DIR "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+    set(MSI64_DEPENDS ${PROJECT_NAME})
+else()
+    set(MSI64_SOURCE_DIR ${CMAKE_SOURCE_DIR}/build/win64)
+    set(MSI64_DEPENDS)
+endif()
+
+if(ARCH_DIR STREQUAL "win32")
+    set(MSI32_SOURCE_DIR "$<TARGET_FILE_DIR:${PROJECT_NAME}>")
+    set(MSI32_DEPENDS ${PROJECT_NAME})
+else()
+    set(MSI32_SOURCE_DIR ${CMAKE_SOURCE_DIR}/build/win32)
+    set(MSI32_DEPENDS)
+endif()
+
+# Helper function: add a custom target that builds the en-us and zh-cn
+# MSI packages, then merges them into one multi-language MSI using
+# Windows SDK MsiTran + WiSubStg + WiLangId.
+function(add_multilang_msi TARGET ARCH PLATFORM SOURCE_DIR DEPENDS_EXPR)
+    set(OUTDIR ${WIX_INSTALLER_ROOT}/${PLATFORM})
+    set(MSI_EN  ${OUTDIR}/bntech_virtual_scanner_${PLATFORM}_en_US.msi)
+    set(MSI_ZH  ${OUTDIR}/bntech_virtual_scanner_${PLATFORM}_zh_CN.msi)
+    set(MSI_MST ${OUTDIR}/zh_CN.mst)
+    set(MSI_OUT ${OUTDIR}/bntech_virtual_scanner_${PLATFORM}.msi)
+
+    add_custom_target(${TARGET}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${OUTDIR}
+        # Build English MSI.
+        COMMAND ${WIX_EXECUTABLE} build ${WIX_SOURCE_FILE}
+            -arch ${ARCH}
+            -d Platform=${PLATFORM}
+            -d SourceDir=${SOURCE_DIR}
+            -d ProjectDir=${CMAKE_SOURCE_DIR}/
+            -d AppLanguage=en_US
+            -culture en-us
+            -ext ${WIX_UI_EXTENSION}
+            -o ${MSI_EN}
+        # Build Simplified Chinese MSI.
+        COMMAND ${WIX_EXECUTABLE} build ${WIX_SOURCE_FILE}
+            -arch ${ARCH}
+            -d Platform=${PLATFORM}
+            -d SourceDir=${SOURCE_DIR}
+            -d ProjectDir=${CMAKE_SOURCE_DIR}/
+            -d AppLanguage=zh_CN
+            -culture zh-cn
+            -ext ${WIX_UI_EXTENSION}
+            -o ${MSI_ZH}
+        # Generate language transform from the two MSI files.
+        COMMAND "${MSITRAN}" -g "${MSI_EN}" "${MSI_ZH}" "${MSI_MST}"
+        # Use the English MSI as base (copy to final name).
+        COMMAND ${CMAKE_COMMAND} -E copy "${MSI_EN}" "${MSI_OUT}"
+        # Embed the zh-CN transform (LCID 2052) into the final MSI.
+        COMMAND cscript //Nologo "${WISUBSTG}" "${MSI_OUT}" "${MSI_MST}" 2052
+        # Update MSI summary to declare support for both languages (1033,2052).
+        COMMAND cscript //Nologo "${WILANGID}" "${MSI_OUT}" Package 1033,2052
+        # Clean up intermediate single-language MSIs and transform file.
+        COMMAND ${CMAKE_COMMAND} -E rm -f "${MSI_EN}" "${MSI_ZH}" "${MSI_MST}"
+        DEPENDS ${DEPENDS_EXPR} ${WIX_SOURCE_FILE}
+        COMMENT "Building multi-language ${ARCH} MSI with WiX (en-us + zh-cn embedded transforms)"
+        VERBATIM
+    )
+endfunction()
+
+add_multilang_msi(msi64 x64 x64 "${MSI64_SOURCE_DIR}" "${MSI64_DEPENDS}")
+add_multilang_msi(msi32 x86 win32 "${MSI32_SOURCE_DIR}" "${MSI32_DEPENDS}")

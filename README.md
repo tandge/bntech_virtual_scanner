@@ -119,10 +119,11 @@ language=zh_CN
 - CMake 3.15+
 - Visual Studio 2022（含 C++ 桌面开发工作负载）
 - FreeImage 库（已包含在 `pub/external` 中）
+- WiX Toolset 4.0.4（仅生成 MSI 时需要）
 
 ### 推荐命令
 
-不带参数运行会构建 win32 + win64，并安装到 Windows TWAIN 目录：
+不带参数运行会构建 win32 + win64，安装到 Windows TWAIN 目录，并生成 32/64 位 MSI 安装包：
 
 ```batch
 build.bat
@@ -135,6 +136,8 @@ build.bat
 ```batch
 build.bat win32       rem 只构建 32 位，不安装
 build.bat win64       rem 只构建 64 位，不安装
+build.bat msi32       rem 构建 32 位 MSI，不安装
+build.bat msi64       rem 构建 64 位 MSI，不安装
 build.bat install     rem 只安装已有构建产物
 build.bat clean       rem 清理 build\win32 和 build\win64
 build.bat debug       rem Debug 构建，默认仍为 Release
@@ -153,6 +156,21 @@ build.bat debug       rem Debug 构建，默认仍为 Release
 
 如果安装时提示 `.ds` 文件被占用，请关闭 XnView、Twack 或其他扫描应用后重试。
 TWAIN DS 本质上是 DLL，被应用加载时无法覆盖。
+
+MSI 输出位置：
+
+```text
+build\installer\win32\bntech_virtual_scanner_win32.msi
+build\installer\win64\bntech_virtual_scanner_win64.msi
+```
+
+MSI 默认使用英文配置。需要中文配置时，可在安装时传入：
+
+```batch
+msiexec /i build\installer\win64\bntech_virtual_scanner_win64.msi APP_LANGUAGE=zh_CN
+```
+
+MSI 安装和卸载完成后会弹出成功提示；如果安装或卸载失败并触发回滚，会弹出失败提示和常见可能原因。
 
 ## 项目结构
 
@@ -292,10 +310,11 @@ Explorer's Details tab.
 - CMake 3.15+
 - Visual Studio 2022 with the C++ desktop development workload.
 - FreeImage library, included under `pub/external`.
+- WiX Toolset 4.0.4, required only when generating MSI packages.
 
 ### Recommended command
 
-Run without arguments to build win32 + win64 and install both data sources:
+Run without arguments to build win32 + win64, install both data sources, and generate both MSI packages:
 
 ```batch
 build.bat
@@ -309,6 +328,8 @@ Common commands:
 ```batch
 build.bat win32       rem Build 32-bit only; do not install.
 build.bat win64       rem Build 64-bit only; do not install.
+build.bat msi32       rem Build the 32-bit MSI; do not install.
+build.bat msi64       rem Build the 64-bit MSI; do not install.
 build.bat install     rem Install existing build outputs only.
 build.bat clean       rem Remove build\win32 and build\win64.
 build.bat debug       rem Debug build; Release is the default.
