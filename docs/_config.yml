@@ -1,0 +1,41 @@
+# 站点基本信息（完全不变）
+title: 我的开发日志
+description: 记录软件开发过程中的学习心得、技术探索和项目实践
+baseurl: "/bntech_virtual_scanner"  # 项目站点必须填写仓库名，用户站点留空
+url: "https://tandge.github.io"  # 完全不变
+
+# 作者信息（完全不变）
+author:
+  name: Ning,Ge / 葛宁
+  email: tandge@gmail.com
+  github: tandge
+
+# 主题配置（完全不变）
+theme: minima
+markdown: kramdown
+
+# 插件配置（完全不变）
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# 日期格式（完全不变）
+date_format: "%Y-%m-%d"
+
+# minima主题导航栏配置
+header_pages:
+  - index.md
+  - archive.md
+  - categories.md
+  - tags.md
+
+# ⚠️ 唯一需要修改的部分：排除文件（路径现在相对于/docs目录）
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - node_modules
+  - vendor
+  - .jekyll-cache
+  - .jekyll-metadata
+  # 注意：这里不需要排除README.md和LICENSE，因为它们在仓库根目录
