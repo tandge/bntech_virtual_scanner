@@ -119,7 +119,7 @@ language=zh_CN
 - CMake 3.15+
 - Visual Studio 2022（含 C++ 桌面开发工作负载）
 - FreeImage 库（已包含在 `pub/external` 中）
-- WiX Toolset 4.0.4（仅生成 MSI 时需要）
+- WiX Toolset 4.0.4 和 Windows SDK（需 MsiTran.exe / WiSubStg.vbs / WiLangId.vbs，仅生成 MSI 时需要）
 
 ### 推荐命令
 
@@ -164,13 +164,19 @@ build\installer\win32\bntech_virtual_scanner_win32.msi
 build\installer\win64\bntech_virtual_scanner_win64.msi
 ```
 
-MSI 默认使用英文配置。需要中文配置时，可在安装时传入：
+MSI 内置英文和简体中文两种 UI 语言，安装时自动根据系统语言选择对应界面。中文系统安装时自动写入：
 
-```batch
-msiexec /i build\installer\win64\bntech_virtual_scanner_win64.msi APP_LANGUAGE=zh_CN
+```text
+%APPDATA%\bntech\config.ini → language=zh_CN
 ```
 
-MSI 安装和卸载完成后会弹出成功提示；如果安装或卸载失败并触发回滚，会弹出失败提示和常见可能原因。
+英文系统不写 config.ini（DS 默认 en_US）。如需强制指定语言：
+
+```batch
+msiexec /i build\installer\win64\bntech_virtual_scanner_win64.msi TRANSFORMS=:2052
+```
+
+MSI 使用 WixUI_InstallDir 标准向导界面，包含安装目录选择、进度条等。
 
 ## 项目结构
 
@@ -310,7 +316,7 @@ Explorer's Details tab.
 - CMake 3.15+
 - Visual Studio 2022 with the C++ desktop development workload.
 - FreeImage library, included under `pub/external`.
-- WiX Toolset 4.0.4, required only when generating MSI packages.
+- WiX Toolset 4.0.4 and Windows SDK (for MsiTran.exe / WiSubStg.vbs / WiLangId.vbs), required only when generating MSI packages.
 
 ### Recommended command
 
@@ -350,6 +356,27 @@ If installation fails because the `.ds` file is in use, close XnView, Twack, or
 any other scanning application and run the install again.  A TWAIN `.ds` file is
 a DLL and cannot be overwritten while loaded.
 
+### MSI packages
+
+Each architecture produces a single multi-language MSI with English and Simplified Chinese UI support. The MSI auto-detects the system language at install time.
+
+Output:
+
+```text
+build\installer\win32\bntech_virtual_scanner_win32.msi
+build\installer\win64\bntech_virtual_scanner_win64.msi
+```
+
+On Chinese Windows, the MSI shows Chinese UI and writes `%APPDATA%\bntech\config.ini` with `language=zh_CN`. On English systems the UI is in English and no config.ini is needed (the data source defaults to `en_US`).
+
+To force a language:
+
+```batch
+msiexec /i build\installer\win64\bntech_virtual_scanner_win64.msi TRANSFORMS=:2052
+```
+
+The MSI uses WixUI_InstallDir standard wizard with directory selection and progress.
+
 ### Manual CMake build
 
 ```batch
@@ -360,6 +387,13 @@ cmake --install build\win32 --prefix C:/Windows
 cmake -S . -B build\win64 -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build\win64
 cmake --install build\win64 --prefix C:/Windows
+```
+
+To build MSI packages manually:
+
+```batch
+cmake --build build\win32 --target msi32
+cmake --build build\win64 --target msi64
 ```
 
 ## Architecture

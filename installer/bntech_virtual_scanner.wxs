@@ -104,23 +104,6 @@
       <ComponentRef Id="LanguageConfig" />
     </Feature>
 
-    <CustomAction Id="ShowInstallFailure"
-                  Script="vbscript"
-                  ScriptSourceFile="$(var.ProjectDir)installer\install_failure.vbs"
-                  Execute="rollback"
-                  Return="ignore" />
-
-    <CustomAction Id="ShowUninstallFailure"
-                  Script="vbscript"
-                  ScriptSourceFile="$(var.ProjectDir)installer\uninstall_failure.vbs"
-                  Execute="rollback"
-                  Return="ignore" />
-
-    <InstallExecuteSequence>
-      <Custom Action="ShowInstallFailure" After="InstallInitialize" Condition="NOT Installed" />
-      <Custom Action="ShowUninstallFailure" After="ShowInstallFailure" Condition="REMOVE=&quot;ALL&quot; AND NOT UPGRADINGPRODUCTCODE" />
-    </InstallExecuteSequence>
-
     <ComponentGroup Id="ScannerFiles" Directory="INSTALLFOLDER">
       <Component Id="DataSourceComponent" Guid="*">
         <File Id="DataSourceFile"
