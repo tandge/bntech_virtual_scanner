@@ -3,7 +3,7 @@
 layout: home          # 使用home布局（minima主题自带）
 title: 我的开发日志    # 页面标题
 permalink: /          # 页面永久链接
-author: 你的名字       # 作者信息
+author: Ning,Ge / 葛宁       # 作者信息
 last_modified_at: 2026-05-25  # 最后更新时间
 ---
 
@@ -13,11 +13,11 @@ last_modified_at: 2026-05-25  # 最后更新时间
 
 ## 📌 关于我
 
-- 🔭 目前专注于 **C++ 系统开发** 和 **Windows 驱动程序**
+- 🔭 目前专注于 **C++ 系统开发** 和 **Windows TWAIN 扫描仪驱动程序**
 - 📚 正在学习 **TWAIN 协议** 和 **虚拟扫描仪技术**
 - 💡 对 **低代码开发** 和 **AI 辅助编程** 有浓厚兴趣
-- 📫 联系我: [your-email@example.com](mailto:your-email@example.com)
-- 🌐 GitHub: [@your-username](https://github.com/your-username)
+- 📫 联系我: [tandge@gmail.com](mailto:tandge@gmail.com)
+- 🌐 GitHub: [@tandge](https://github.com/tandge)
 
 ## 🚀 最新文章
 
@@ -36,7 +36,7 @@ last_modified_at: 2026-05-25  # 最后更新时间
 
 ## 💻 我的项目
 
-### [虚拟扫描仪驱动](https://github.com/your-username/virtual-scanner)
+### [虚拟扫描仪驱动](https://github.com/tandge/bntech_virtual_scanner)
 一个基于TWAIN协议的Windows虚拟扫描仪驱动程序，支持多种图像格式和传输模式。
 
 - **技术栈**: C++, Win32 API, TWAIN 2.4
@@ -83,6 +83,14 @@ TWAIN协议的中文翻译和详细解释，帮助开发者快速理解和实现
 - **RSS订阅**: [/feed.xml](/feed.xml)
 - **GitHub Issues**: [提交问题或建议](https://github.com/tandge/bntech_virtual_scanner/issues)
 - **邮箱**: tandge@gmail.com
+
+## 扩展功能建议
+
+1. **添加归档页面**: 创建 `archive.md` 文件，显示所有文章列表
+2. **添加分类页面**: 创建 `categories.md` 文件，按分类展示文章
+3. **添加标签页面**: 创建 `tags.md` 文件，按标签展示文章
+4. **添加评论系统**: 使用Giscus或Disqus添加评论功能
+5. **自定义主题**: 可以更换为其他Jekyll主题，如minimal、cayman等
 
 ---
 
