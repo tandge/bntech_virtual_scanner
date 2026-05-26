@@ -1,10 +1,4 @@
 
----
-layout: default
-title: bntech TWAIN Virtual Scanner development technology
-description: system development technology
----
-
 ## Navigator
 
 - [TWAIN 扫描协议介绍 / TWAIN Scanning Protocol Overview](twain.md)
