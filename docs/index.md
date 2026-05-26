@@ -10,15 +10,11 @@ description: 本页面主要介绍 bntech TWAIN Virtual Scanner 功能特性,如
 
 ## 快速导航
 
-- [关于我](about.md)
-- [项目展示](projects.md)
-- [博客文章](blog.md)
+- [使用手册](user-guide.md)
+- [FAQ](faq.md)
+- [开发技术](devlog.md)
 - [联系我](contact.md)
 
-## 最新动态
-
-- 2026-05-25: 网站正式上线
-- 2026-05-20: 完成第一个项目
 
 ---
 
