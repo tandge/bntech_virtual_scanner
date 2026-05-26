@@ -76,6 +76,14 @@ class TwainDataSource {
   // DAT_SETUPFILEXFER: Accepts / returns the file-save path from the app.
   TW_INT16 handleDatSetupFileXfer(TW_UINT16 msg, pTW_SETUPFILEXFER data);
 
+  // DAT_SETUPMEMXFER: Returns the DS's preferred / min / max buffer sizes
+  // for memory-mode strip transfers.
+  TW_INT16 handleDatSetupMemXfer(TW_UINT16 msg, pTW_SETUPMEMXFER data);
+
+  // DAT_IMAGEMEMXFER: Streams the next strip of pixel data into the
+  // application-supplied buffer.  Returns TWRC_XFERDONE on the last strip.
+  TW_INT16 handleDatImageMemXfer(TW_UINT16 msg, pTW_IMAGEMEMXFER data);
+
   // --- State Machine ---
 
   // Opens a TWAIN connection from an application.
@@ -150,6 +158,9 @@ class TwainDataSource {
   // Used to pre-fill the settings UI and to pick the actual save location
   // when ShowUI=FALSE.  Empty until the application provides one.
   std::string app_file_path_;
+  // Byte offset into image_data_ for the next memory-mode strip.
+  // Reset when a new transfer starts; advances as strips are handed out.
+  TW_UINT32 mem_xfer_offset_;
 };
 
 #endif

@@ -139,7 +139,8 @@ TwainDataSource::TwainDataSource(const TW_IDENTITY& /*app_id*/)
       condition_code_(TWCC_SUCCESS),
       image_data_(nullptr),
       canceled_(false),
-      xfer_pending_(false) {
+      xfer_pending_(false),
+      mem_xfer_offset_(0) {
   std::memset(&identity_, 0, sizeof(identity_));
   std::memset(&app_, 0, sizeof(app_));
   std::memset(&pending_xfers_, 0, sizeof(pending_xfers_));
@@ -197,6 +198,8 @@ TW_UINT16 TwainDataSource::dsEntry(pTW_IDENTITY origin, TW_UINT32 dg,
         return handleDatImageLayout(msg, static_cast<pTW_IMAGELAYOUT>(data));
       case DAT_SETUPFILEXFER:
         return handleDatSetupFileXfer(msg, static_cast<pTW_SETUPFILEXFER>(data));
+      case DAT_SETUPMEMXFER:
+        return handleDatSetupMemXfer(msg, static_cast<pTW_SETUPMEMXFER>(data));
       default:
         condition_code_ = TWCC_BADPROTOCOL;
         return TWRC_FAILURE;
@@ -215,6 +218,8 @@ TW_UINT16 TwainDataSource::dsEntry(pTW_IDENTITY origin, TW_UINT32 dg,
         return TWRC_FAILURE;
       case DAT_IMAGEFILEXFER:
         return handleDatImageFileXfer(msg, static_cast<pTW_SETUPFILEXFER>(data));
+      case DAT_IMAGEMEMXFER:
+        return handleDatImageMemXfer(msg, static_cast<pTW_IMAGEMEMXFER>(data));
       default:
         condition_code_ = TWCC_CAPUNSUPPORTED;
         return TWRC_FAILURE;
@@ -452,6 +457,130 @@ TW_INT16 TwainDataSource::handleDatImageFileXfer(TW_UINT16 msg,
   }
   state_ = DsState::kXferring;
   return TWRC_XFERDONE;
+}
+
+// DAT_SETUPMEMXFER:  Reports the DS's preferred buffer sizes for memory-mode
+// strip transfers.  We advertise ~64 KB per strip (matching transfer()'s
+// internal chunk size) and let the application round up to whole scan lines.
+TW_INT16 TwainDataSource::handleDatSetupMemXfer(TW_UINT16 msg,
+                                                  pTW_SETUPMEMXFER data) {
+  if (data == nullptr) {
+    condition_code_ = TWCC_BADVALUE;
+    return TWRC_FAILURE;
+  }
+  if (msg != MSG_GET) {
+    condition_code_ = TWCC_BADPROTOCOL;
+    return TWRC_FAILURE;
+  }
+  // Static hints; do not depend on image_info_ being ready.
+  data->MinBufSize = 8 * 1024;
+  data->MaxBufSize = 256 * 1024;
+  data->Preferred  = 64 * 1024;
+  return TWRC_SUCCESS;
+}
+
+// DAT_IMAGEMEMXFER:  Memory transfer mode.  Reuses transfer() to materialise
+// the full image into image_data_ on the first call, then streams successive
+// strips out of image_data_[mem_xfer_offset_..] into the app-supplied buffer.
+// Returns TWRC_XFERDONE on the last strip and transitions to kXferring.
+TW_INT16 TwainDataSource::handleDatImageMemXfer(TW_UINT16 msg,
+                                                  pTW_IMAGEMEMXFER data) {
+  if (msg != MSG_GET) {
+    condition_code_ = TWCC_BADPROTOCOL;
+    return TWRC_FAILURE;
+  }
+  if (data == nullptr || data->Memory.TheMem == nullptr ||
+      data->Memory.Length == 0) {
+    condition_code_ = TWCC_BADVALUE;
+    return TWRC_FAILURE;
+  }
+  // Auto-promote 5 -> 6 on first call, matching the native / file paths.
+  if (state_ == DsState::kEnabled && pending_xfers_.Count != 0) {
+    state_ = DsState::kXferReady;
+    xfer_pending_ = false;
+    getImageInfo(&image_info_);
+  }
+  if (state_ == DsState::kEnabled && pending_xfers_.Count == 0) {
+    condition_code_ = TWCC_SUCCESS;
+    return TWRC_CANCEL;
+  }
+  if (state_ != DsState::kXferReady && state_ != DsState::kXferring) {
+    DS_LOG_FMT("ds: MemXfer - wrong state %d\n", static_cast<int>(state_));
+    condition_code_ = TWCC_SEQERROR;
+    return TWRC_FAILURE;
+  }
+  // First strip:  materialise the full image into image_data_ via the
+  // existing transfer() path, then rewind the per-strip offset.
+  if (state_ == DsState::kXferReady) {
+    TW_INT16 twrc = transfer();
+    if (twrc != TWRC_SUCCESS) {
+      return twrc;
+    }
+    mem_xfer_offset_ = 0;
+    state_ = DsState::kXferring;
+  }
+  DWORD bpr = BYTES_PERLINE(image_info_.ImageWidth,
+                            image_info_.BitsPerPixel);
+  DWORD total = bpr * image_info_.ImageLength;
+  if (mem_xfer_offset_ >= total) {
+    // Image already fully delivered; report zero rows + XFERDONE so the
+    // application can transition via DAT_PENDINGXFERS.
+    std::memset(data, 0, sizeof(TW_IMAGEMEMXFER));
+    data->Compression = TWCP_NONE;
+    data->BytesPerRow = bpr;
+    data->Columns = image_info_.ImageWidth;
+    data->Rows = 0;
+    data->XOffset = 0;
+    data->YOffset = image_info_.ImageLength;
+    data->BytesWritten = 0;
+    return TWRC_XFERDONE;
+  }
+  DWORD app_buf = data->Memory.Length;
+  DWORD remaining = total - mem_xfer_offset_;
+  DWORD chunk = std::min(app_buf, remaining);
+  // Round down to whole scan lines to avoid splitting a row across calls.
+  DWORD rows = chunk / bpr;
+  if (rows == 0) {
+    // Buffer smaller than one row; reject so the app can grow it.
+    condition_code_ = TWCC_BADVALUE;
+    return TWRC_FAILURE;
+  }
+  DWORD bytes = rows * bpr;
+  BYTE* src = static_cast<BYTE*>(dsmLockMemory(image_data_));
+  if (src == nullptr) {
+    condition_code_ = TWCC_LOWMEMORY;
+    return TWRC_FAILURE;
+  }
+  std::memcpy(data->Memory.TheMem, src + mem_xfer_offset_, bytes);
+  // FreeImage stores 24-bit pixels in BGR order (Windows DIB convention).
+  // TWAIN memory-mode delivery for TWPT_RGB requires R, G, B byte order, so
+  // swap the red/blue channels in-place before handing the buffer to the app.
+  if (image_info_.BitsPerPixel == 24) {
+    BYTE* dst = static_cast<BYTE*>(data->Memory.TheMem);
+    DWORD w = image_info_.ImageWidth;
+    for (DWORD r = 0; r < rows; ++r) {
+      BYTE* line = dst + r * bpr;
+      for (DWORD x = 0; x < w; ++x) {
+        BYTE t = line[3 * x];
+        line[3 * x] = line[3 * x + 2];
+        line[3 * x + 2] = t;
+      }
+    }
+  }
+  dsmUnlockMemory(image_data_);
+  DWORD y_start = mem_xfer_offset_ / bpr;
+  mem_xfer_offset_ += bytes;
+  data->Compression = TWCP_NONE;
+  data->BytesPerRow = bpr;
+  data->Columns = image_info_.ImageWidth;
+  data->Rows = rows;
+  data->XOffset = 0;
+  data->YOffset = y_start;
+  data->BytesWritten = bytes;
+  if (mem_xfer_offset_ >= total) {
+    return TWRC_XFERDONE;
+  }
+  return TWRC_SUCCESS;
 }
 
 // DAT_SETUPFILEXFER:  The application uses MSG_SET to tell the DS where to
@@ -719,6 +848,7 @@ TW_INT16 TwainDataSource::endXfer(pTW_PENDINGXFERS xf) {
   pending_xfers_.Count = 0;
   scanner_.unlock();
   state_ = DsState::kEnabled;
+  mem_xfer_offset_ = 0;
   if (xf == nullptr) {
     condition_code_ = TWCC_BADVALUE;
     return TWRC_CHECKSTATUS;
@@ -746,6 +876,7 @@ TW_INT16 TwainDataSource::resetXfer(pTW_PENDINGXFERS xf) {
   pending_xfers_.Count = 0;
   state_ = DsState::kEnabled;
   scanner_.unlock();
+  mem_xfer_offset_ = 0;
   if (xf == nullptr) {
     condition_code_ = TWCC_BADVALUE;
     return TWRC_FAILURE;

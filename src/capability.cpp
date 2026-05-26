@@ -25,7 +25,7 @@ void CapabilityManager::addCap(TW_UINT16 id, TW_UINT16 type, TW_UINT16 con_type,
 void CapabilityManager::initialize() {
   caps_.clear();
   addCap(CAP_SUPPORTEDCAPS,  TWTY_UINT16, TWON_ARRAY,       kCapGet, 0);
-  addCap(ICAP_XFERMECH,       TWTY_UINT16, TWON_ONEVALUE,    kCapAll, TWSX_NATIVE,    {TWSX_NATIVE, TWSX_FILE});
+  addCap(ICAP_XFERMECH,       TWTY_UINT16, TWON_ONEVALUE,    kCapAll, TWSX_NATIVE,    {TWSX_NATIVE, TWSX_FILE, TWSX_MEMORY});
   addCap(ICAP_PIXELTYPE,      TWTY_UINT16, TWON_ENUMERATION, kCapAll, TWPT_RGB,       {TWPT_BW, TWPT_GRAY, TWPT_RGB});
   addCap(ICAP_XRESOLUTION,    TWTY_FIX32,  TWON_ENUMERATION, kCapAll, 300,            {150, 200, 300, 600});
   addCap(ICAP_YRESOLUTION,    TWTY_FIX32,  TWON_ENUMERATION, kCapAll, 300,            {150, 200, 300, 600});
