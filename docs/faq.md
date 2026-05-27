@@ -1,4 +1,8 @@
-# BN Tech Virtual Scanner — FAQ
+---
+layout: page
+title: BN Tech Virtual Scanner — FAQ
+permalink: /faq/
+---
 
 Frequently asked questions for end users of the BN Tech Virtual Scanner TWAIN Data Source.
 

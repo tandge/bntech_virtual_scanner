@@ -1,0 +1,58 @@
+---
+---
+
+@import "{{ site.theme }}";
+
+/* 美化 details/summary 标签样式 */
+details {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #e1e4e8;
+  border-radius: 6px;
+  background-color: #f6f8fa;
+}
+
+details[open] {
+  padding-bottom: 0.5rem;
+}
+
+summary {
+  font-weight: 600;
+  font-size: 1.1em;
+  cursor: pointer;
+  padding: 0.5rem;
+  margin: -1rem -1rem 1rem -1rem;
+  border-bottom: 1px solid #e1e4e8;
+  background-color: #fafbfc;
+  border-radius: 6px 6px 0 0;
+}
+
+details[open] summary {
+  border-bottom: 1px solid #e1e4e8;
+  margin-bottom: 1rem;
+}
+
+summary:hover {
+  background-color: #f1f3f4;
+}
+
+/* 修复 details 内部的 Markdown 间距 */
+details h2 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+details h3 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+details ul {
+  margin-bottom: 1rem;
+}
+
+details code {
+  background-color: #f1f3f4;
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}

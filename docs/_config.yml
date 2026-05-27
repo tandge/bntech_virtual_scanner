@@ -12,7 +12,19 @@ author:
 
 # 主题配置（完全不变）
 theme: minima
+
+# ✅ 新增：完整的 Kramdown 配置（解决 <details> 标签渲染问题）
 markdown: kramdown
+kramdown:
+  input: GFM  # 强制使用 GitHub Flavored Markdown，100% 兼容 GitHub 预览
+  parse_block_html: true  # 关键：允许解析 HTML 块内部的 Markdown
+  hard_wrap: false
+  auto_ids: true
+  footnote_nr: 1
+  entity_output: as_char
+  toc_levels: 1..6
+  smart_quotes: lsquo,rsquo,ldquo,rdquo
+  enable_coderay: false
 
 # 插件配置（完全不变）
 plugins:
@@ -29,8 +41,9 @@ header_pages:
   - archive.md
   - categories.md
   - tags.md
+  - faq.md  # ✅ 新增：将 FAQ 页面添加到导航栏
 
-# ⚠️ 唯一需要修改的部分：排除文件（路径现在相对于/docs目录）
+# ⚠️ 修正：排除文件（路径现在相对于 /docs 目录）
 exclude:
   - Gemfile
   - Gemfile.lock
@@ -38,4 +51,4 @@ exclude:
   - vendor
   - .jekyll-cache
   - .jekyll-metadata
-  # 注意：这里不需要排除README.md和LICENSE，因为它们在仓库根目录
+  # 注意：这里不需要排除 README.md 和 LICENSE，因为它们在仓库根目录
