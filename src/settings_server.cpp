@@ -53,15 +53,17 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<!DOCTYPE html>\n<html><head><meta charset='utf-8'>\n";
   html << "<title>" << text.app_title << "</title>\n";
   html << "<style>\n";
-  html << "body{font-family:Segoe UI,Arial,sans-serif;margin:20px;background:#f5f5f5;}\n";
-  html << "h1{color:#333;font-size:18px;}\n";
+  html << "html,body{overflow:hidden;}\n";
+  html << "body{font-family:Segoe UI,Arial,sans-serif;margin:12px;"
+       << "background:#f5f5f5;width:460px;}\n";
+  html << "h1{color:#333;font-size:16px;margin:0 0 10px 0;}\n";
   html << ".group{background:#fff;border:1px solid #ddd;border-radius:4px;"
-       << "padding:16px;margin-bottom:16px;}\n";
-  html << ".group h2{margin-top:0;color:#555;font-size:14px;}\n";
-  html << "label{display:inline-block;width:140px;margin:4px 0;}\n";
-  html << "select,input{margin:4px 0;padding:4px;}\n";
-  html << ".buttons{text-align:right;margin-top:16px;}\n";
-  html << "button{padding:8px 24px;margin-left:8px;font-size:14px;"
+       << "padding:10px 12px;margin-bottom:10px;}\n";
+  html << ".group h2{margin:0 0 6px 0;color:#555;font-size:13px;}\n";
+  html << "label{display:inline-block;width:130px;margin:2px 0;font-size:13px;}\n";
+  html << "select,input{margin:2px 0;padding:3px;font-size:13px;}\n";
+  html << ".buttons{text-align:right;margin-top:10px;}\n";
+  html << "button{padding:6px 20px;margin-left:6px;font-size:13px;"
        << "border:none;border-radius:4px;cursor:pointer;}\n";
   html << ".scan{background:#0078d7;color:#fff;}\n";
   html << ".cancel{background:#ccc;color:#333;}\n";
@@ -134,6 +136,12 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "</div>\n";
   html << "<script>\n";
   html << "var EXTS=['.png','.jpg','.bmp','.tif'];\n";
+  // Compact layout: resize the browser window to the content width and
+  // centre it on screen.  resizeTo/moveTo are best-effort and may be
+  // ignored by modern browsers; in that case the fixed 460px body still
+  // prevents content from stretching.
+  html << "window.resizeTo(500,420);\n";
+  html << "window.moveTo((screen.width-500)/2,(screen.height-420)/2);\n";
   html << "function val(id,d){var e=document.getElementById(id);return e?e.value:d;}\n";
   html << "function updateMode(){\n";
   html << "  var tm=document.getElementById('transfermode');\n";
@@ -217,8 +225,10 @@ void SettingsServer::parseFormData(const std::string& form_data) {
   result_.output_filename[MAX_PATH - 1] = '\0';
 }
 DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
+  // SHBrowseForFolderW requires COM initialized on the calling thread.
+  CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
   auto* self = static_cast<SettingsServer*>(param);
-  if (self == nullptr) return 1;
+  if (self == nullptr) { CoUninitialize(); return 1; }
   while (self->running_) {
     sockaddr_in client_addr = {};
     int client_len = sizeof(client_addr);
@@ -250,9 +260,11 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
       BROWSEINFOW bi = {};
       std::wstring browse_title = localization::toWide(localization::strings().select_output_directory);
       bi.lpszTitle = browse_title.c_str();
-      bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-      // Bring the folder picker to the foreground and center it on screen
-      // so it is not hidden behind the browser window that opened it.
+      bi.ulFlags = BIF_RETURNONLYFSDIRS;
+      // Center the folder picker on screen so it is not hidden behind
+      // the browser window that opened it.  The classic dialog (without
+      // BIF_NEWDIALOGSTYLE) has a fixed size at BFFM_INITIALIZED, so
+      // the centering math is reliable at every resolution.
       bi.lpfn = [](HWND hwnd, UINT msg, LPARAM, LPARAM) -> int {
         if (msg == BFFM_INITIALIZED) {
           RECT rc = {};
@@ -321,6 +333,7 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
       closesocket(client);
     }
   }
+  CoUninitialize();
   return 0;
 }
 void SettingsServer::initDefaultOutputDir() {
@@ -379,7 +392,54 @@ bool SettingsServer::showSettingsUi(const std::string& /*html_dir*/,
   }
   std::string url = "http://127.0.0.1:" + std::to_string(server_port_) + "/";
   ShellExecuteA(nullptr, "open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-  WaitForSingleObject(server_thread_, 60000);  
+
+  // The browser window may not appear instantly.  Poll for up to 3 seconds
+  // looking for a top-level window whose title contains the app name, then
+  // centre it on screen so it is not left wherever the browser last closed.
+  {
+    const int kW = 500;
+    const int kH = 420;
+    int sw = GetSystemMetrics(SM_CXSCREEN);
+    int sh = GetSystemMetrics(SM_CYSCREEN);
+    int tx = (sw - kW) / 2;
+    int ty = (sh - kH) / 2;
+    std::wstring needle = localization::toWide(localization::strings().app_title);
+    HWND found = nullptr;
+    for (int i = 0; i < 30; ++i) {
+      found = FindWindowW(nullptr, needle.c_str());
+      if (found == nullptr) {
+        // Some browsers append " - BrowserName" to the title; try a
+        // prefix search via EnumWindows as a fallback.
+        struct Ctx { std::wstring n; HWND h; } ctx = {needle, nullptr};
+        EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+          auto* c = reinterpret_cast<Ctx*>(lp);
+          wchar_t buf[512] = {};
+          if (GetWindowTextW(h, buf, 512) && wcsstr(buf, c->n.c_str())) {
+            c->h = h;
+            return FALSE;
+          }
+          return TRUE;
+        }, reinterpret_cast<LPARAM>(&ctx));
+        found = ctx.h;
+      }
+      if (found != nullptr) {
+        SetWindowPos(found, nullptr, tx, ty, kW, kH,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        // Remove sizing border and maximize button so the user cannot
+        // resize the compact settings dialog.
+        LONG style = GetWindowLongW(found, GWL_STYLE);
+        style &= ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
+        SetWindowLongW(found, GWL_STYLE, style);
+        SetWindowPos(found, nullptr, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                     SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        break;
+      }
+      Sleep(100);
+    }
+  }
+
+  WaitForSingleObject(server_thread_, 60000);
   running_ = false;
   closesocket(listen_socket_);
   CloseHandle(server_thread_);

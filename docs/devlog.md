@@ -14,3 +14,4 @@
 - [Memory Transfer Mode Design](memory_design.md)
 - [MSI Installer Design](msi_installer_design.md)
 - [Native Transfer Mode Design](native_transfer_design.md)
+- [Settings UI Position, Size & Folder Picker Design](settings_UI_constrict_design.md)

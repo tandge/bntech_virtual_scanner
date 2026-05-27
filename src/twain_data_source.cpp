@@ -407,6 +407,23 @@ TW_INT16 TwainDataSource::handleDatImageNativeXfer(TW_UINT16 msg,
   DS_LOG("ds: NativeXfer - calling transfer()\n");
   TW_INT16 twrc = transfer();
   DS_LOG_FMT("ds: NativeXfer - transfer() returned %d\n", twrc);
+  // If the user selected File mode in the settings UI, perform the file save
+  // now, even though the application requested Native transfer.  Some TWAIN
+  // clients (e.g. Twack 32) always use DAT_IMAGENATIVEXFER regardless of the
+  // negotiated ICAP_XFERMECH, so this is the only chance to write the file.
+  if (twrc == TWRC_SUCCESS) {
+    int cur_mech = TWSX_NATIVE;
+    caps_.getCurrentValue(ICAP_XFERMECH, cur_mech);
+    if (cur_mech == static_cast<int>(TWSX_FILE)) {
+      bool ok;
+      if (!app_file_path_.empty()) {
+        ok = scanner_.saveImageToPath(app_file_path_);
+      } else {
+        ok = scanner_.saveImageToFile();
+      }
+      DS_LOG_FMT("ds: NativeXfer - file save %s\n", ok ? "ok" : "failed");
+    }
+  }
   if (twrc == TWRC_SUCCESS) {
     twrc = getDibImage(data);
     DS_LOG_FMT("ds: NativeXfer - getDibImage() returned %d\n", twrc);
