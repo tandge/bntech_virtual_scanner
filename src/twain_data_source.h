@@ -154,6 +154,7 @@ class TwainDataSource {
   TW_HANDLE image_data_;
   bool canceled_;
   bool xfer_pending_;
+  bool close_ds_req_pending_;
   // Path supplied by the application via DAT_SETUPFILEXFER / MSG_SET.
   // Used to pre-fill the settings UI and to pick the actual save location
   // when ShowUI=FALSE.  Empty until the application provides one.

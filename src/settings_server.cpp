@@ -53,7 +53,7 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<!DOCTYPE html>\n<html><head><meta charset='utf-8'>\n";
   html << "<title>" << text.app_title << "</title>\n";
   html << "<style>\n";
-  html << "html,body{overflow:hidden;}\n";
+  html << "html,body{overflow-x:hidden;overflow-y:auto;}\n";
   html << "body{font-family:Segoe UI,Arial,sans-serif;margin:12px;"
        << "background:#f5f5f5;width:460px;}\n";
   html << "h1{color:#333;font-size:16px;margin:0 0 10px 0;}\n";
@@ -78,10 +78,13 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "</select><br>\n";
   html << "<label>" << text.resolution_dpi << "</label>\n";
   html << "<select id='resolution' name='resolution'>\n";
+  html << "<option value='50'" << sel(50, result_.resolution) << ">50</option>\n";
+  html << "<option value='100'" << sel(100, result_.resolution) << ">100</option>\n";
   html << "<option value='150'" << sel(150, result_.resolution) << ">150</option>\n";
   html << "<option value='200'" << sel(200, result_.resolution) << ">200</option>\n";
   html << "<option value='300'" << sel(300, result_.resolution) << ">300</option>\n";
   html << "<option value='600'" << sel(600, result_.resolution) << ">600</option>\n";
+  html << "<option value='1200'" << sel(1200, result_.resolution) << ">1200</option>\n";
   html << "</select><br>\n";
   html << "<label>" << text.page_size << "</label>\n";
   html << "<select id='pagesize' name='pagesize'>\n";
@@ -140,8 +143,10 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   // centre it on screen.  resizeTo/moveTo are best-effort and may be
   // ignored by modern browsers; in that case the fixed 460px body still
   // prevents content from stretching.
-  html << "window.resizeTo(500,420);\n";
-  html << "window.moveTo((screen.width-500)/2,(screen.height-420)/2);\n";
+  const int winW = 540;
+  const int winH = result_.app_managed_file_output ? 480 : 580;
+  html << "window.resizeTo(" << winW << "," << winH << ");\n";
+  html << "window.moveTo((screen.width-" << winW << ")/2,(screen.height-" << winH << ")/2);\n";
   html << "function val(id,d){var e=document.getElementById(id);return e?e.value:d;}\n";
   html << "function updateMode(){\n";
   html << "  var tm=document.getElementById('transfermode');\n";
@@ -397,8 +402,8 @@ bool SettingsServer::showSettingsUi(const std::string& /*html_dir*/,
   // looking for a top-level window whose title contains the app name, then
   // centre it on screen so it is not left wherever the browser last closed.
   {
-    const int kW = 500;
-    const int kH = 420;
+    const int kW = 540;
+    const int kH = result_.app_managed_file_output ? 480 : 580;
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
     int tx = (sw - kW) / 2;
@@ -423,6 +428,7 @@ bool SettingsServer::showSettingsUi(const std::string& /*html_dir*/,
         found = ctx.h;
       }
       if (found != nullptr) {
+        if (IsZoomed(found)) ShowWindow(found, SW_RESTORE);
         SetWindowPos(found, nullptr, tx, ty, kW, kH,
                      SWP_NOZORDER | SWP_NOACTIVATE);
         // Remove sizing border and maximize button so the user cannot

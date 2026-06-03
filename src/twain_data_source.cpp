@@ -140,6 +140,7 @@ TwainDataSource::TwainDataSource(const TW_IDENTITY& /*app_id*/)
       image_data_(nullptr),
       canceled_(false),
       xfer_pending_(false),
+      close_ds_req_pending_(false),
       mem_xfer_offset_(0) {
   std::memset(&identity_, 0, sizeof(identity_));
   std::memset(&app_, 0, sizeof(app_));
@@ -694,6 +695,7 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
   }
   state_ = DsState::kEnabled;
   canceled_ = false;
+  close_ds_req_pending_ = false;
   xfer_pending_ = false;
   scanner_.wrapImageIndex();
   scanner_.lock();
@@ -733,10 +735,9 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
                   st.wHour, st.wMinute, st.wSecond);
     }
     if (!server.showSettingsUi("", ui_result) || !ui_result.scan_clicked) {
-      // User canceled the settings UI.  Stay in kEnabled state and notify
-      // the app via MSG_CLOSEDSREQ; the app will respond with MSG_DISABLEDS
-      // which transitions us back to kOpen via disableDs().
-      doCloseDsRequestEvent();
+      // User canceled the settings UI.  Set a flag so the next
+      // MSG_PROCESSEVENT returns MSG_CLOSEDSREQ to the app.
+      close_ds_req_pending_ = true;
       condition_code_ = TWCC_SUCCESS;
       return TWRC_SUCCESS;
     }
@@ -801,6 +802,7 @@ TW_INT16 TwainDataSource::disableDs(pTW_USERINTERFACE /*data*/) {
   }
   scanner_.unlock();
   state_ = DsState::kOpen;
+  close_ds_req_pending_ = false;
   return TWRC_SUCCESS;
 }
 // Processes application events.  If there is a pending transfer and
@@ -810,6 +812,11 @@ TW_INT16 TwainDataSource::processEvent(pTW_EVENT data) {
   if (state_ < DsState::kEnabled) {
     condition_code_ = TWCC_SEQERROR;
     return TWRC_FAILURE;
+  }
+  if (close_ds_req_pending_) {
+    close_ds_req_pending_ = false;
+    data->TWMessage = MSG_CLOSEDSREQ;
+    return TWRC_DSEVENT;
   }
   if (xfer_pending_ && state_ == DsState::kEnabled) {
     state_ = DsState::kXferReady;
