@@ -395,6 +395,7 @@ bool VirtualScanner::resetScanner() {
   settings_.page_size = 0;
   settings_.page_fill_mode = 0;
   settings_.rotation = 0;
+  settings_.flip = 0;
   if (dib_ != nullptr) {
     FreeImage_Unload(dib_);
     dib_ = nullptr;
@@ -450,6 +451,7 @@ bool VirtualScanner::preScanPrep() {
   if (!ensure24BitDib()) return false;
   if (!applyPageSizeScaling()) return false;
   if (!applyRotation()) return false;
+  if (!applyFlip()) return false;
   if (!applyPixelFormat()) return false;
   calculateRowParams();
   return true;
@@ -565,6 +567,18 @@ bool VirtualScanner::applyRotation() {
   if (rotated == nullptr) return false;
   FreeImage_Unload(dib_);
   dib_ = rotated;
+  return true;
+}
+
+// Flips the image horizontally or vertically based on settings.
+bool VirtualScanner::applyFlip() {
+  if (dib_ == nullptr) return false;
+  int flip = settings_.flip;
+  if (flip == 1) {
+    return FreeImage_FlipHorizontal(dib_) != FALSE;
+  } else if (flip == 2) {
+    return FreeImage_FlipVertical(dib_) != FALSE;
+  }
   return true;
 }
 

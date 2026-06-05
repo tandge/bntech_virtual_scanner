@@ -42,6 +42,10 @@ const Strings kEnUs = {
     "90 degree",
     "180 degree",
     "270 degree",
+    "Flip:",
+    "None",
+    "Horizontal",
+    "Vertical",
     "Virtual Scanner",
     "BN Tech Virtual Scanner"};
 
@@ -77,6 +81,10 @@ const Strings kZhCn = {
     "90 度",
     "180 度",
     "270 度",
+    "翻转：",
+    "无",
+    "水平翻转",
+    "垂直翻转",
     "虚拟扫描仪",
     "BN Tech 虚拟扫描仪"};
 

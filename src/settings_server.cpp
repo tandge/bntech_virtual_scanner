@@ -100,6 +100,12 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<option value='2'" << sel(2, result_.rotation) << ">" << text.rotation_180deg << "</option>\n";
   html << "<option value='3'" << sel(3, result_.rotation) << ">" << text.rotation_270deg << "</option>\n";
   html << "</select><br>\n";
+  html << "<label>" << text.flip << "</label>\n";
+  html << "<select id='flip' name='flip'>\n";
+  html << "<option value='0'" << sel(0, result_.flip) << ">" << text.flip_none << "</option>\n";
+  html << "<option value='1'" << sel(1, result_.flip) << ">" << text.flip_horizontal << "</option>\n";
+  html << "<option value='2'" << sel(2, result_.flip) << ">" << text.flip_vertical << "</option>\n";
+  html << "</select><br>\n";
   html << "<label>" << text.page_fill << "</label>\n";
   html << "<select id='pagefillmode' name='pagefillmode'>\n";
   html << "<option value='0'" << sel(0, result_.page_fill_mode) << ">" << text.stretch << "</option>\n";
@@ -177,6 +183,7 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "  p.pagesize=val('pagesize','');\n";
   html << "  p.pagefillmode=val('pagefillmode','');\n";
   html << "  p.rotation=val('rotation','');\n";
+  html << "  p.flip=val('flip','');\n";
   html << "  p.fileformat=val('fileformat','');\n";
   html << "  p.transfermode=val('transfermode','');\n";
   html << "  p.outputdir=val('outputdir','');\n";
@@ -231,6 +238,7 @@ void SettingsServer::parseFormData(const std::string& form_data) {
   result_.page_size = std::atoi(params["pagesize"].c_str());
   result_.page_fill_mode = std::atoi(params["pagefillmode"].c_str());
   result_.rotation = std::atoi(params["rotation"].c_str());
+  result_.flip = std::atoi(params["flip"].c_str());
   result_.file_format = std::atoi(params["fileformat"].c_str());
   result_.transfer_mode = std::atoi(params["transfermode"].c_str());
   std::strncpy(result_.output_dir, params["outputdir"].c_str(), MAX_PATH - 1);

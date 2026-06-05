@@ -42,6 +42,10 @@ struct Strings {
   const char* rotation_90deg;
   const char* rotation_180deg;
   const char* rotation_270deg;
+  const char* flip;
+  const char* flip_none;
+  const char* flip_horizontal;
+  const char* flip_vertical;
   const char* product_family;
   const char* product_name;
 };
