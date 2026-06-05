@@ -37,6 +37,11 @@ struct Strings {
   const char* select_output_directory;
   const char* request_received;
   const char* close_tab_now;
+  const char* rotation;
+  const char* rotation_0deg;
+  const char* rotation_90deg;
+  const char* rotation_180deg;
+  const char* rotation_270deg;
   const char* product_family;
   const char* product_name;
 };

@@ -37,6 +37,11 @@ const Strings kEnUs = {
     "Select Output Directory",
     "Request received",
     "You may close this browser tab now.",
+    "Rotation:",
+    "0 degree",
+    "90 degree",
+    "180 degree",
+    "270 degree",
     "Virtual Scanner",
     "BN Tech Virtual Scanner"};
 
@@ -67,6 +72,11 @@ const Strings kZhCn = {
     "选择输出目录",
     "请求已收到",
     "现在可以关闭此浏览器标签页。",
+    "旋转：",
+    "0 度",
+    "90 度",
+    "180 度",
+    "270 度",
     "虚拟扫描仪",
     "BN Tech 虚拟扫描仪"};
 

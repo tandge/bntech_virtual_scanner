@@ -18,6 +18,7 @@ struct ScannerSettings {
   float y_resolution;  // Vertical DPI.
   int page_size;       // 0=US Letter, 1=US Legal, 2=A4, 3=A5.
   int page_fill_mode;  // 0=Stretch, 1=Fit with padding, 2=Fill and crop.
+  int rotation;        // 0=0 deg, 1=90 deg, 2=180 deg, 3=270 deg clockwise.
 };
 
 class VirtualScanner {
@@ -120,6 +121,9 @@ private:
   // Resizes the image to the selected physical page size at the requested DPI,
   // using the selected fill mode (stretch, fit with padding, or fill and crop).
   bool applyPageSizeScaling();
+
+  // Rotates the image clockwise by 0/90/180/270 degrees based on settings.
+  bool applyRotation();
 
   // Applies pixel type conversion (BW threshold or gray).  Also sets DPI
   // metadata to match the requested resolution so the output files / DIB

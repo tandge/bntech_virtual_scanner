@@ -394,6 +394,7 @@ bool VirtualScanner::resetScanner() {
   settings_.y_resolution = 300.0f;
   settings_.page_size = 0;
   settings_.page_fill_mode = 0;
+  settings_.rotation = 0;
   if (dib_ != nullptr) {
     FreeImage_Unload(dib_);
     dib_ = nullptr;
@@ -448,6 +449,7 @@ bool VirtualScanner::preScanPrep() {
   if (dib_ == nullptr) return false;
   if (!ensure24BitDib()) return false;
   if (!applyPageSizeScaling()) return false;
+  if (!applyRotation()) return false;
   if (!applyPixelFormat()) return false;
   calculateRowParams();
   return true;
@@ -547,6 +549,22 @@ bool VirtualScanner::applyPageSizeScaling() {
   if (cropped == nullptr) return false;
   FreeImage_Unload(dib_);
   dib_ = cropped;
+  return true;
+}
+
+// Rotates the image clockwise by 0/90/180/270 degrees based on settings.
+// Uses FreeImage_Rotate with exact 90-degree multiples for lossless rotation.
+bool VirtualScanner::applyRotation() {
+  if (dib_ == nullptr) return false;
+  int rot = settings_.rotation;
+  if (rot < 0 || rot > 3) rot = 0;
+  if (rot == 0) return true;
+  // FreeImage positive angle is counter-clockwise; negative is clockwise.
+  double angle = -static_cast<double>(rot) * 90.0;
+  FIBITMAP* rotated = FreeImage_Rotate(dib_, angle, nullptr);
+  if (rotated == nullptr) return false;
+  FreeImage_Unload(dib_);
+  dib_ = rotated;
   return true;
 }
 

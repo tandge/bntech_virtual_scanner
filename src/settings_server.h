@@ -10,6 +10,7 @@ struct SettingsUiResult {
   int resolution;
   int page_size;         // 0=US Letter, 1=US Legal, 2=A4, 3=A5.
   int page_fill_mode;    // 0=Stretch, 1=Fit with padding, 2=Fill and crop.
+  int rotation;          // 0=0 deg, 1=90 deg, 2=180 deg, 3=270 deg clockwise.
   int file_format;       // 0=PNG, 1=JPG, 2=BMP, 3=TIFF, 4=PDF
   int transfer_mode;     // 0=Native, 1=File
   char output_dir[MAX_PATH];

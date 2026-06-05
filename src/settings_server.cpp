@@ -55,14 +55,14 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<style>\n";
   html << "html,body{overflow-x:hidden;overflow-y:auto;}\n";
   html << "body{font-family:Segoe UI,Arial,sans-serif;margin:12px;"
-       << "background:#f5f5f5;width:460px;}\n";
+       << "background:#f5f5f5;width:440px;}\n";
   html << "h1{color:#333;font-size:16px;margin:0 0 10px 0;}\n";
   html << ".group{background:#fff;border:1px solid #ddd;border-radius:4px;"
        << "padding:10px 12px;margin-bottom:10px;}\n";
   html << ".group h2{margin:0 0 6px 0;color:#555;font-size:13px;}\n";
   html << "label{display:inline-block;width:130px;margin:2px 0;font-size:13px;}\n";
   html << "select,input{margin:2px 0;padding:3px;font-size:13px;}\n";
-  html << ".buttons{text-align:right;margin-top:10px;}\n";
+  html << ".buttons{text-align:right;margin-top:10px;padding-right:20px;}\n";
   html << "button{padding:6px 20px;margin-left:6px;font-size:13px;"
        << "border:none;border-radius:4px;cursor:pointer;}\n";
   html << ".scan{background:#0078d7;color:#fff;}\n";
@@ -92,6 +92,13 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<option value='1'" << sel(1, result_.page_size) << ">US Legal (8.5 x 14 in)</option>\n";
   html << "<option value='2'" << sel(2, result_.page_size) << ">A4 (210 x 297 mm)</option>\n";
   html << "<option value='3'" << sel(3, result_.page_size) << ">A5 (148 x 210 mm)</option>\n";
+  html << "</select><br>\n";
+  html << "<label>" << text.rotation << "</label>\n";
+  html << "<select id='rotation' name='rotation'>\n";
+  html << "<option value='0'" << sel(0, result_.rotation) << ">" << text.rotation_0deg << "</option>\n";
+  html << "<option value='1'" << sel(1, result_.rotation) << ">" << text.rotation_90deg << "</option>\n";
+  html << "<option value='2'" << sel(2, result_.rotation) << ">" << text.rotation_180deg << "</option>\n";
+  html << "<option value='3'" << sel(3, result_.rotation) << ">" << text.rotation_270deg << "</option>\n";
   html << "</select><br>\n";
   html << "<label>" << text.page_fill << "</label>\n";
   html << "<select id='pagefillmode' name='pagefillmode'>\n";
@@ -144,7 +151,7 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   // ignored by modern browsers; in that case the fixed 460px body still
   // prevents content from stretching.
   const int winW = 540;
-  const int winH = result_.app_managed_file_output ? 480 : 580;
+  const int winH = result_.app_managed_file_output ? 510 : 610;
   html << "window.resizeTo(" << winW << "," << winH << ");\n";
   html << "window.moveTo((screen.width-" << winW << ")/2,(screen.height-" << winH << ")/2);\n";
   html << "function val(id,d){var e=document.getElementById(id);return e?e.value:d;}\n";
@@ -169,6 +176,7 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "  p.resolution=val('resolution','');\n";
   html << "  p.pagesize=val('pagesize','');\n";
   html << "  p.pagefillmode=val('pagefillmode','');\n";
+  html << "  p.rotation=val('rotation','');\n";
   html << "  p.fileformat=val('fileformat','');\n";
   html << "  p.transfermode=val('transfermode','');\n";
   html << "  p.outputdir=val('outputdir','');\n";
@@ -222,6 +230,7 @@ void SettingsServer::parseFormData(const std::string& form_data) {
   result_.resolution = std::atoi(params["resolution"].c_str());
   result_.page_size = std::atoi(params["pagesize"].c_str());
   result_.page_fill_mode = std::atoi(params["pagefillmode"].c_str());
+  result_.rotation = std::atoi(params["rotation"].c_str());
   result_.file_format = std::atoi(params["fileformat"].c_str());
   result_.transfer_mode = std::atoi(params["transfermode"].c_str());
   std::strncpy(result_.output_dir, params["outputdir"].c_str(), MAX_PATH - 1);
@@ -403,7 +412,7 @@ bool SettingsServer::showSettingsUi(const std::string& /*html_dir*/,
   // centre it on screen so it is not left wherever the browser last closed.
   {
     const int kW = 540;
-    const int kH = result_.app_managed_file_output ? 480 : 580;
+    const int kH = result_.app_managed_file_output ? 510 : 610;
     int sw = GetSystemMetrics(SM_CXSCREEN);
     int sh = GetSystemMetrics(SM_CYSCREEN);
     int tx = (sw - kW) / 2;

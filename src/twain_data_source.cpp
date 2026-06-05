@@ -711,6 +711,7 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
     ui_result.resolution = cur_res;
     ui_result.page_size = scanner_.getSettings().page_size;
     ui_result.page_fill_mode = scanner_.getSettings().page_fill_mode;
+    ui_result.rotation = scanner_.getSettings().rotation;
     ui_result.transfer_mode = (cur_mech == static_cast<int>(TWSX_FILE)) ? 1 : 0;
     static const int kTwffToIdx[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF};
     for (int i = 0; i < 4; ++i) {
@@ -750,6 +751,7 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
     ui_settings.y_resolution = static_cast<float>(ui_result.resolution);
     ui_settings.page_size = ui_result.page_size;
     ui_settings.page_fill_mode = ui_result.page_fill_mode;
+    ui_settings.rotation = ui_result.rotation;
     scanner_.setSettings(ui_settings);
     if (ui_result.app_managed_file_output) {
       // Keep XFERMECH as TWSX_FILE; do not touch dir/filename/format
