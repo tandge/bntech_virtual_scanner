@@ -16,7 +16,8 @@ SettingsServer::SettingsServer()
     : server_thread_(nullptr),
       running_(false),
       server_port_(0),
-      listen_socket_(INVALID_SOCKET) {
+      listen_socket_(INVALID_SOCKET),
+      browser_window_(nullptr) {
   std::memset(&result_, 0, sizeof(result_));
 }
 SettingsServer::~SettingsServer() {
@@ -178,6 +179,12 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "  var span=document.getElementById('outputext');\n";
   html << "  if(ff&&span)span.textContent=EXTS[ff.value]||'';\n";
   html << "}\n";
+  html << "function submitAndClose(url){\n";
+  html << "  var x=new XMLHttpRequest();\n";
+  html << "  x.open('GET',url,true);\n";
+  html << "  x.send();\n";
+  html << "  setTimeout(function(){window.open('','_self');window.close();},100);\n";
+  html << "}\n";
   html << "function doScan(){\n";
   html << "  var p={};\n";
   html << "  p.pixeltype=val('pixeltype','');\n";
@@ -193,10 +200,10 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "  p.action='scan';\n";
   html << "  var qs=Object.keys(p).map(function(k){"
        << "return encodeURIComponent(k)+'='+encodeURIComponent(p[k])}).join('&');\n";
-  html << "  fetch('/submit?'+qs).finally(function(){window.close();});\n";
+  html << "  submitAndClose('/submit?'+qs);\n";
   html << "}\n";
   html << "function doCancel(){\n";
-  html << "  fetch('/submit?action=cancel').finally(function(){window.close();});\n";
+  html << "  submitAndClose('/submit?action=cancel');\n";
   html << "}\n";
   html << "function browseDir(){\n";
   html << "  var x=new XMLHttpRequest();\n";
@@ -243,10 +250,8 @@ void SettingsServer::parseFormData(const std::string& form_data) {
   result_.flip = std::atoi(params["flip"].c_str());
   result_.file_format = std::atoi(params["fileformat"].c_str());
   result_.transfer_mode = std::atoi(params["transfermode"].c_str());
-  std::strncpy(result_.output_dir, params["outputdir"].c_str(), MAX_PATH - 1);
-  result_.output_dir[MAX_PATH - 1] = '\0';
-  std::strncpy(result_.output_filename, params["outputfilename"].c_str(), MAX_PATH - 1);
-  result_.output_filename[MAX_PATH - 1] = '\0';
+  strncpy_s(result_.output_dir, MAX_PATH, params["outputdir"].c_str(), _TRUNCATE);
+  strncpy_s(result_.output_filename, MAX_PATH, params["outputfilename"].c_str(), _TRUNCATE);
 }
 DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
   // SHBrowseForFolderW requires COM initialized on the calling thread.
@@ -336,7 +341,9 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
       const auto& text = localization::strings();
       std::string body =
           std::string("<!DOCTYPE html><html><head><meta charset='utf-8'>") +
-          "<title>" + text.app_title + "</title></head><body " +
+          "<title>" + text.app_title + "</title>"
+          "<script>window.open('','_self');window.close();</script>"
+          "</head><body " +
           "style='font-family:Segoe UI,Arial;text-align:center;margin-top:60px;'>" +
           "<h2>" + text.request_received + "</h2>" +
           "<p>" + text.close_tab_now + "</p></body></html>";
@@ -345,6 +352,7 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
                              "Connection: close\r\n\r\n" + body;
       send(client, response.c_str(), static_cast<int>(response.size()), 0);
       closesocket(client);
+      self->closeBrowserWindow();
       self->running_ = false;
       break;
     } else {
@@ -359,6 +367,29 @@ DWORD WINAPI SettingsServer::serverThreadProc(LPVOID param) {
   }
   CoUninitialize();
   return 0;
+}
+void SettingsServer::closeBrowserWindow() const {
+  HWND hwnd = browser_window_;
+  if (!hwnd || !IsWindow(hwnd)) {
+    std::wstring needle = localization::toWide(localization::strings().app_title);
+    hwnd = FindWindowW(nullptr, needle.c_str());
+    if (hwnd == nullptr) {
+      struct Ctx { std::wstring n; HWND h; } ctx = {needle, nullptr};
+      EnumWindows([](HWND h, LPARAM lp) -> BOOL {
+        auto* c = reinterpret_cast<Ctx*>(lp);
+        wchar_t buf[512] = {};
+        if (GetWindowTextW(h, buf, 512) && wcsstr(buf, c->n.c_str())) {
+          c->h = h;
+          return FALSE;
+        }
+        return TRUE;
+      }, reinterpret_cast<LPARAM>(&ctx));
+      hwnd = ctx.h;
+    }
+  }
+  if (hwnd && IsWindow(hwnd)) {
+    PostMessageW(hwnd, WM_CLOSE, 0, 0);
+  }
 }
 void SettingsServer::initDefaultOutputDir() {
   char pics[MAX_PATH] = {};
@@ -447,6 +478,7 @@ bool SettingsServer::showSettingsUi(const std::string& /*html_dir*/,
         found = ctx.h;
       }
       if (found != nullptr) {
+        browser_window_ = found;
         if (IsZoomed(found)) ShowWindow(found, SW_RESTORE);
         SetWindowPos(found, nullptr, tx, ty, kW, kH,
                      SWP_NOZORDER | SWP_NOACTIVATE);

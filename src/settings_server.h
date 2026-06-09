@@ -34,6 +34,7 @@ private:
   int findFreePort() const;
   std::string buildHtmlPage(int port) const;
   void initDefaultOutputDir();
+  void closeBrowserWindow() const;
   static DWORD WINAPI serverThreadProc(LPVOID param);
   void parseFormData(const std::string& form_data);
   HANDLE server_thread_;
@@ -41,6 +42,7 @@ private:
   int server_port_;
   SettingsUiResult result_;
   SOCKET listen_socket_;
+  HWND browser_window_;
   std::string default_output_dir_;
 };
 #endif  
