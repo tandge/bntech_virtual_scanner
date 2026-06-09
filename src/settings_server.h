@@ -12,7 +12,7 @@ struct SettingsUiResult {
   int page_fill_mode;    // 0=Stretch, 1=Fit with padding, 2=Fill and crop.
   int rotation;          // 0=0 deg, 1=90 deg, 2=180 deg, 3=270 deg clockwise.
   int flip;              // 0=None, 1=Horizontal, 2=Vertical.
-  int file_format;       // 0=PNG, 1=JPG, 2=BMP, 3=TIFF, 4=PDF
+  int file_format;       // 0=PNG, 1=JPG, 2=BMP, 3=TIFF, 4=WEBP, 5=GIF
   int transfer_mode;     // 0=Native, 1=File
   char output_dir[MAX_PATH];
   char output_filename[MAX_PATH];  // Base filename (no extension); extension is

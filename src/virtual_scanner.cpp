@@ -792,8 +792,8 @@ int VirtualScanner::getBitsPerPixel() const {
 }
 bool VirtualScanner::saveImageToFile() {
   if (dib_ == nullptr || output_dir_.empty()) return false;
-  static const FREE_IMAGE_FORMAT kFiFmts[] = {FIF_PNG, FIF_JPEG, FIF_BMP, FIF_TIFF};
-  static const char* kExts[] = {".png", ".jpg", ".bmp", ".tif"};
+  static const FREE_IMAGE_FORMAT kFiFmts[] = {FIF_PNG, FIF_JPEG, FIF_BMP, FIF_TIFF, FIF_WEBP, FIF_GIF};
+  static const char* kExts[] = {".png", ".jpg", ".bmp", ".tif", ".webp", ".gif"};
   FREE_IMAGE_FORMAT fif = kFiFmts[output_format_];
   // Ensure directory exists
   SHCreateDirectoryExA(nullptr, output_dir_.c_str(), nullptr);
@@ -811,8 +811,11 @@ bool VirtualScanner::saveImageToFile() {
   }
   last_saved_file_ = output_dir_ + "\\" + fname;
   applyDpiMetadata();
-  int flags = (fif == FIF_JPEG) ? 85 : 0;
-  bool saved = FreeImage_Save(fif, dib_, last_saved_file_.c_str(), flags) != FALSE;
+  int flags = (fif == FIF_JPEG || fif == FIF_WEBP) ? 85 : 0;
+  FIBITMAP* save_dib = (fif == FIF_GIF && FreeImage_GetBPP(dib_) > 8)
+      ? FreeImage_ColorQuantize(dib_, FIQ_WUQUANT) : dib_;
+  bool saved = save_dib && FreeImage_Save(fif, save_dib, last_saved_file_.c_str(), flags) != FALSE;
+  if (save_dib != dib_) FreeImage_Unload(save_dib);
   if (saved) patchSavedDpiMetadata(fif, last_saved_file_);
   return saved;
 }
@@ -839,6 +842,8 @@ bool VirtualScanner::saveImageToPath(const std::string& path) {
     else if (ext == "jpg" || ext == "jpeg") fif = FIF_JPEG;
     else if (ext == "bmp") fif = FIF_BMP;
     else if (ext == "tif" || ext == "tiff") fif = FIF_TIFF;
+    else if (ext == "webp") fif = FIF_WEBP;
+    else if (ext == "gif") fif = FIF_GIF;
   }
   // Ensure the output directory exists.
   std::string dir(abs_path);
@@ -849,8 +854,11 @@ bool VirtualScanner::saveImageToPath(const std::string& path) {
   }
   last_saved_file_ = abs_path;
   applyDpiMetadata();
-  int flags = (fif == FIF_JPEG) ? 85 : 0;
-  bool saved = FreeImage_Save(fif, dib_, abs_path, flags) != FALSE;
+  int flags = (fif == FIF_JPEG || fif == FIF_WEBP) ? 85 : 0;
+  FIBITMAP* save_dib = (fif == FIF_GIF && FreeImage_GetBPP(dib_) > 8)
+      ? FreeImage_ColorQuantize(dib_, FIQ_WUQUANT) : dib_;
+  bool saved = save_dib && FreeImage_Save(fif, save_dib, abs_path, flags) != FALSE;
+  if (save_dib != dib_) FreeImage_Unload(save_dib);
   if (saved) patchSavedDpiMetadata(fif, abs_path);
   return saved;
 }

@@ -610,7 +610,7 @@ TW_INT16 TwainDataSource::handleDatSetupFileXfer(TW_UINT16 msg,
     condition_code_ = TWCC_BADVALUE;
     return TWRC_FAILURE;
   }
-  static const int kTwffMap[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF};
+  static const int kTwffMap[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF, TWFF_PNG, TWFF_PNG};
   switch (msg) {
     case MSG_SET: {
       app_file_path_ = reinterpret_cast<const char*>(data->FileName);
@@ -628,6 +628,7 @@ TW_INT16 TwainDataSource::handleDatSetupFileXfer(TW_UINT16 msg,
         else if (ext == "jpg" || ext == "jpeg") ff = TWFF_JFIF;
         else if (ext == "bmp") ff = TWFF_BMP;
         else if (ext == "tif" || ext == "tiff") ff = TWFF_TIFF;
+        else if (ext == "webp" || ext == "gif") ff = TWFF_PNG;
       }
       caps_.setCurrentValue(ICAP_IMAGEFILEFORMAT, ff);
       return TWRC_SUCCESS;
@@ -761,7 +762,7 @@ TW_INT16 TwainDataSource::enableDs(pTW_USERINTERFACE data) {
       caps_.setCurrentValue(ICAP_XFERMECH, static_cast<int>(TWSX_FILE));
     } else if (ui_result.transfer_mode == 1) {
       caps_.setCurrentValue(ICAP_XFERMECH, static_cast<int>(TWSX_FILE));
-      static const int kTwffMap[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF};
+      static const int kTwffMap[] = {TWFF_PNG, TWFF_JFIF, TWFF_BMP, TWFF_TIFF, TWFF_PNG, TWFF_PNG};
       caps_.setCurrentValue(ICAP_IMAGEFILEFORMAT, kTwffMap[ui_result.file_format]);
       scanner_.setOutputDir(ui_result.output_dir);
       scanner_.setOutputFormat(ui_result.file_format);

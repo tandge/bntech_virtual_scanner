@@ -134,6 +134,8 @@ std::string SettingsServer::buildHtmlPage(int port) const {
     html << "<option value='1'" << sel(1, result_.file_format) << ">JPG</option>\n";
     html << "<option value='2'" << sel(2, result_.file_format) << ">BMP</option>\n";
     html << "<option value='3'" << sel(3, result_.file_format) << ">TIFF</option>\n";
+    html << "<option value='4'" << sel(4, result_.file_format) << ">WEBP</option>\n";
+    html << "<option value='5'" << sel(5, result_.file_format) << ">GIF</option>\n";
     html << "</select><br>\n";
     html << "</div>\n";
     html << "<div id='row_output'>\n";
@@ -151,7 +153,7 @@ std::string SettingsServer::buildHtmlPage(int port) const {
   html << "<button class='scan' onclick='doScan()'>" << text.scan << "</button>\n";
   html << "</div>\n";
   html << "<script>\n";
-  html << "var EXTS=['.png','.jpg','.bmp','.tif'];\n";
+  html << "var EXTS=['.png','.jpg','.bmp','.tif','.webp','.gif'];\n";
   // Compact layout: resize the browser window to the content width and
   // centre it on screen.  resizeTo/moveTo are best-effort and may be
   // ignored by modern browsers; in that case the fixed 460px body still
