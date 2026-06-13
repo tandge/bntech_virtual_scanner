@@ -7,6 +7,8 @@ development, and scanner-application integration work.  It reads images from a
 local folder, exposes them as scanner acquisitions, supports a lightweight
 settings UI, and can transfer images through TWAIN native or memory or file-transfer
 modes. It supports BMP/PNG/JPG/TIFF/Webp/Gif multiple output file formats.
+<img width="519" height="814" alt="ss_settings" src="https://github.com/user-attachments/assets/c160d813-cfa5-4161-a37e-a52f450f9953" />
+
 
 <details>
 <summary>中文说明 / Chinese</summary>
