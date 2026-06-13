@@ -33,7 +33,10 @@ struct Strings {
   const char* browse;
   const char* output_filename;
   const char* cancel;
+  const char* preview;
   const char* scan;
+  const char* preview_image;
+  const char* preview_hint;
   const char* select_output_directory;
   const char* request_received;
   const char* close_tab_now;
