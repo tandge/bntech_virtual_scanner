@@ -2,11 +2,11 @@
 
 **Author:** 葛宁 (Ning Ge) <tandge@gmail.com>
 
-A TWAIN 2.5 compatible virtual flatbed scanner Data Source DLL for testing,
+A TWAIN 1.9 compatible virtual flatbed scanner Data Source DLL for windows platform testing,
 development, and scanner-application integration work.  It reads images from a
 local folder, exposes them as scanner acquisitions, supports a lightweight
-settings UI, and can transfer images through TWAIN native or file-transfer
-modes.
+settings UI, and can transfer images through TWAIN native or memory or file-transfer
+modes. It supports BMP/PNG/JPG/TIFF/Webp/Gif multiple output file formats.
 
 <details>
 <summary>中文说明 / Chinese</summary>
